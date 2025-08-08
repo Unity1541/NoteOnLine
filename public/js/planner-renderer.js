@@ -48,14 +48,25 @@ export function renderCalendarGrid(state, calendarGrid) {
     const weekDays = getWeekDays(state.currentWeekStart);
     const timeLabelContainer = document.createElement('div');
     timeLabelContainer.className = 'border-r border-stone-200';
-    let timeLabelsHTML = '<div class="h-16 border-b border-stone-200 flex items-center justify-center text-base font-medium text-slate-600">時間</div><div class="relative h-[1020px]">'; // 17 hours * 60px/hr
-    for (let i = 6; i <= 22; i++) {
-        timeLabelsHTML += `<div class="absolute text-sm text-slate-500 text-center w-full flex items-center justify-center" style="top: ${((i - 6) * 60)}px; height: 60px">${String(i).padStart(2, '0')}:00</div>`;
+    
+    // --- TIME LABELS with Hour and Half-Hour marks ---
+    let timeLabelsHTML = '<div class="h-16 border-b border-stone-200 flex items-center justify-center text-base font-medium text-slate-600">時間</div><div class="relative h-[1020px]">';
+    for (let h = 6; h <= 22; h++) {
+        // Main hour label
+        const hourTop = (h - 6) * 60;
+        timeLabelsHTML += `<div class="absolute text-sm text-slate-600 font-medium text-center w-full" style="top: ${hourTop - 10}px; height: 20px; z-index: 5;">${String(h).padStart(2, '0')}:00</div>`;
+
+        // Secondary half-hour label
+        if (h < 22) { // Avoid adding a label for 22:30 that would be at the very bottom edge
+            const halfHourTop = hourTop + 30;
+            timeLabelsHTML += `<div class="absolute text-xs text-slate-400 text-center w-full" style="top: ${halfHourTop - 7}px; height: 14px; z-index: 5;">${String(h).padStart(2, '0')}:30</div>`;
+        }
     }
     timeLabelsHTML += '</div>';
     timeLabelContainer.innerHTML = timeLabelsHTML;
     calendarGrid.appendChild(timeLabelContainer);
 
+    // --- DAY COLUMNS ---
     weekDays.forEach((day, index) => {
         const dayColumn = document.createElement('div');
         dayColumn.className = 'border-r border-stone-200 last:border-r-0';
@@ -73,15 +84,18 @@ export function renderCalendarGrid(state, calendarGrid) {
             <div class="relative h-[1020px] day-events-container" data-date="${formatDate(day)}">
         `;
 
-        for (let i = 0; i < 17; i++) {
-            dayHTML += `<div class="absolute w-full border-t border-stone-100" style="top: ${(i * 60)}px"></div>`;
+        // --- GRID LINES at 5-minute intervals ---
+        for (let min = 0; min < 1020; min += 5) {
+            const isHour = min % 60 === 0;
+            const lineClass = isHour ? 'border-stone-200' : 'border-stone-100'; // Bolder line for hours
+            dayHTML += `<div class="absolute w-full border-t ${lineClass}" style="top: ${min}px"></div>`;
         }
 
         const dayEvents = state.events.filter(e => e.date === formatDate(day));
         dayEvents.forEach(event => {
             const startMinutes = timeToMinutes(event.startTime);
             const endMinutes = timeToMinutes(event.endTime);
-            const top = (startMinutes - 360); // top position in pixels
+            const top = (startMinutes - 360); // top position in pixels (relative to 6:00)
             const height = (endMinutes - startMinutes); // height in pixels
             const eventStyle = `top: ${Math.max(0, top)}px; height: ${Math.max(12, height)}px; background-color: ${event.color}; border-left-color: ${event.completed ? '#10b981' : '#6366f1'}`;
             
@@ -143,12 +157,15 @@ function renderAddEventForm(state, eventDateSelect, eventColorPicker) {
 
 function renderSummary(state, summaryContent) {
     const weekDays = getWeekDays(state.currentWeekStart);
-    const firstDay = weekDays[0];
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0);
+
     const lastDay = new Date(weekDays[6]);
     lastDay.setHours(23, 59, 59, 999);
 
     const weekEvents = state.events.filter(e => {
-        const eventDate = new Date(e.date);
+        // By appending 'T00:00', we ensure the date is parsed in the local timezone, not UTC.
+        const eventDate = new Date(e.date + 'T00:00');
         return eventDate >= firstDay && eventDate <= lastDay;
     });
 
@@ -191,13 +208,16 @@ function renderSummary(state, summaryContent) {
 
 function renderChecklist(state, checklistContent) {
     const weekDays = getWeekDays(state.currentWeekStart);
-    const firstDay = weekDays[0];
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0); // BUG FIX: Set to start of Monday
+
     const lastDay = new Date(weekDays[6]);
     lastDay.setHours(23, 59, 59, 999);
     
     const weekEvents = state.events
         .filter(e => {
-            const eventDate = new Date(e.date);
+            // By appending 'T00:00', we ensure the date is parsed in the local timezone, not UTC.
+            const eventDate = new Date(e.date + 'T00:00');
             return eventDate >= firstDay && eventDate <= lastDay;
         })
         .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());

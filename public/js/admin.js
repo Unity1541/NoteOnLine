@@ -59,7 +59,6 @@ const prevWeekBtn = document.getElementById('prev-week-btn');
 const todayBtn = document.getElementById('today-btn');
 const nextWeekBtn = document.getElementById('next-week-btn');
 const logoutBtn = document.getElementById('logout-btn');
-const calendarGrid = document.getElementById('calendar-grid');
 const addEventForm = document.getElementById('add-event-form');
 const formTitle = document.getElementById('form-title');
 const eventTitleInput = document.getElementById('event-title-input');
@@ -76,12 +75,12 @@ const formStatus = document.getElementById('form-status');
 
 // Admin Panel selectors
 const adminPanel = document.getElementById('admin-panel');
+const formContainer = document.getElementById('form-container');
 const adminEventsList = document.getElementById('admin-events-list');
 const userProgressChartCanvas = document.getElementById('user-progress-chart');
 const chartNoData = document.getElementById('chart-no-data');
 
-// Sidebar is not used in admin view in the same way, but renderer needs it.
-// We'll hide the add button and only show the form for editing.
+// The form elements are needed for the sidebar renderer
 const sidebarDOMElements = { summaryContent: null, checklistContent: null, eventDateSelect, eventColorPicker };
 
 
@@ -128,10 +127,9 @@ function renderAppUI() {
         loginScreen.classList.add('hidden');
         plannerApp.classList.remove('hidden');
         renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-        renderCalendarGrid(state, calendarGrid);
-        // Admin doesn't have the same sidebar, so we manually call the form render
+        // Admin doesn't have a calendar, but we need to render the form elements.
         renderSidebar(state, { ...sidebarDOMElements, summaryContent: document.createElement('div'), checklistContent: document.createElement('div')});
-        showForm(false); // Always show form for editing/adding
+        hideForm(); // Init form state to be hidden
         loadAdminData();
     } else {
         loginScreen.classList.remove('hidden');
@@ -152,8 +150,7 @@ onAuthStateChanged(auth, async (user) => {
         state.isLoggedIn = true;
         state.currentUser = user;
         state.isAdmin = true;
-        // Admin view doesn't show their own events on the calendar, but loads all in panel.
-        // We can load their events if we want them to use the app as well. For now, empty.
+        // Admin view doesn't show their own events on the calendar.
         state.events = [];
     } else {
         state.isLoggedIn = false;
@@ -187,7 +184,7 @@ function handleLogout() {
     sessionStorage.removeItem('currentWeekStart');
 }
 
-// --- FIRESTORE DATA HANDLING (Admin doesn't use the personal event listener) ---
+// --- FIRESTORE DATA HANDLING ---
 
 async function handleSaveEvent(e) {
     e.preventDefault();
@@ -223,7 +220,7 @@ async function handleSaveEvent(e) {
     try {
         const eventRef = doc(db, "events", state.editingEventId);
         await updateDoc(eventRef, eventData);
-        hideForm(); // Clear form after successful edit
+        hideForm(); // Clear and hide form after successful edit
     } catch (error) {
         console.error("Error saving event: ", error);
         formStatus.textContent = "儲存失敗，請稍後再試。";
@@ -235,6 +232,7 @@ async function handleSaveEvent(e) {
 
 function openEditForm(eventToEdit) {
     if (eventToEdit) {
+        formContainer.classList.remove('hidden');
         state.editingEventId = eventToEdit.id;
         showForm(true); // isEditing = true
         eventTitleInput.value = eventToEdit.title;
@@ -263,12 +261,15 @@ function loadAdminData() {
 
 function renderUserProgressChart(allEvents) {
     const weekDays = getWeekDays(state.currentWeekStart);
-    const firstDay = weekDays[0];
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0); // BUG FIX: Set to start of Monday
+
     const lastDay = new Date(weekDays[6]);
     lastDay.setHours(23, 59, 59, 999);
 
     const weekEvents = allEvents.filter(e => {
-        const eventDate = new Date(e.date);
+        // By appending 'T00:00', we ensure the date is parsed in the local timezone, not UTC.
+        const eventDate = new Date(e.date + 'T00:00');
         return eventDate >= firstDay && eventDate <= lastDay;
     });
 
@@ -404,7 +405,7 @@ async function handleAdminActions(e) {
         const eventData = JSON.parse(editButton.dataset.event);
         openEditForm(eventData);
         // Scroll to form for better UX
-        addEventForm.scrollIntoView({ behavior: 'smooth' });
+        formContainer.scrollIntoView({ behavior: 'smooth' });
     }
 }
 
@@ -415,7 +416,7 @@ function handleNavigateWeek(direction) {
     state.currentWeekStart = newDate;
     sessionStorage.setItem('currentWeekStart', state.currentWeekStart.toISOString());
     renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-    // Reload admin data for the new week
+    // Reload admin data for the new week for the chart
     loadAdminData();
 }
 
@@ -430,12 +431,13 @@ function handleGoToToday() {
 function showForm(isEditing = false) {
     addEventForm.classList.remove('hidden');
     formTitle.textContent = isEditing ? '編輯行程' : '請從下方選擇事件';
-    setButtonLoading(saveEventBtn, false, isEditing ? '更新變更' : '更新');
+    setButtonLoading(saveEventBtn, false, isEditing ? '更新變更' : '更新變更');
     saveEventBtn.disabled = !isEditing;
     formStatus.textContent = '';
 }
 
 function hideForm() {
+    formContainer.classList.add('hidden');
     state.editingEventId = null;
     addEventForm.querySelector('form').reset();
     eventTitleInput.value = '';
@@ -443,7 +445,7 @@ function hideForm() {
     eventChapterInput.value = '';
     eventPagesInput.value = '';
     state.selectedColor = colorOptions[0];
-    showForm(false);
+    showForm(false); // Reset form state for next time
 }
 
 function handleColorPick(e) {
