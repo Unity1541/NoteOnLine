@@ -82,7 +82,7 @@
         <header id="app-header" class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg p-6 mb-6 border border-white/30 relative overflow-hidden">
           <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-2xl"></div>
           
-          <div class="flex items-center justify-between relative z-10">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
             <div>
               <div class="flex items-center gap-4 mb-2">
                 <h1 class="text-3xl font-light bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
@@ -97,7 +97,7 @@
               <p id="week-display" class="text-lg text-slate-700 font-medium">
               </p>
             </div>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center flex-wrap justify-center md:justify-end gap-3">
               <button id="prev-week-btn" class="p-3 bg-white/30 hover:bg-white/50 rounded-xl transition-all duration-200 backdrop-blur-sm shadow-md hover:shadow-lg transform hover:scale-105">
                 <i data-lucide="chevron-left" class="w-5 h-5 text-slate-700"></i>
               </button>
