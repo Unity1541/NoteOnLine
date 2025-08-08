@@ -57,8 +57,10 @@ const eventTitleInput = document.getElementById('event-title-input');
 const eventChapterInput = document.getElementById('event-chapter-input');
 const eventPagesInput = document.getElementById('event-pages-input');
 const eventDateSelect = document.getElementById('event-date-select');
-const eventStartTimeInput = document.getElementById('event-start-time-input');
-const eventEndTimeInput = document.getElementById('event-end-time-input');
+const eventStartHourInput = document.getElementById('event-start-hour-input');
+const eventStartMinuteInput = document.getElementById('event-start-minute-input');
+const eventEndHourInput = document.getElementById('event-end-hour-input');
+const eventEndMinuteInput = document.getElementById('event-end-minute-input');
 const eventNotesInput = document.getElementById('event-notes-input');
 const eventColorPicker = document.getElementById('event-color-picker');
 const saveEventBtn = document.getElementById('save-event-btn');
@@ -160,15 +162,15 @@ async function handleSaveEvent(e) {
         chapter: eventChapterInput.value,
         pages: eventPagesInput.value,
         date: eventDateSelect.value,
-        startTime: eventStartTimeInput.value,
-        endTime: eventEndTimeInput.value,
+        startTime: `${eventStartHourInput.value}:${eventStartMinuteInput.value}`,
+        endTime: `${eventEndHourInput.value}:${eventEndMinuteInput.value}`,
         notes: eventNotesInput.value,
         color: state.selectedColor,
         uid: state.currentUser.uid,
         email: state.currentUser.email,
     };
 
-    if (!eventData.title || !eventData.date || !eventData.startTime || !eventData.endTime) {
+    if (!eventData.title || !eventData.date || !eventStartHourInput.value || !eventStartMinuteInput.value || !eventEndHourInput.value || !eventEndMinuteInput.value) {
         formStatus.textContent = '請填寫所有必填欄位！';
         formStatus.className = 'text-red-500 text-sm text-center h-5';
         return;
@@ -204,8 +206,16 @@ function openEditForm(eventId) {
         eventChapterInput.value = eventToEdit.chapter || '';
         eventPagesInput.value = eventToEdit.pages || '';
         eventDateSelect.value = eventToEdit.date;
-        eventStartTimeInput.value = eventToEdit.startTime;
-        eventEndTimeInput.value = eventToEdit.endTime;
+        if (eventToEdit.startTime) {
+            const [startHour, startMinute] = eventToEdit.startTime.split(':');
+            eventStartHourInput.value = startHour;
+            eventStartMinuteInput.value = startMinute;
+        }
+        if (eventToEdit.endTime) {
+            const [endHour, endMinute] = eventToEdit.endTime.split(':');
+            eventEndHourInput.value = endHour;
+            eventEndMinuteInput.value = endMinute;
+        }
         eventNotesInput.value = eventToEdit.notes;
         state.selectedColor = eventToEdit.color;
         // Re-render the sidebar to update form and color picker

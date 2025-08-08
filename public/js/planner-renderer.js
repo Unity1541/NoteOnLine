@@ -49,18 +49,12 @@ export function renderCalendarGrid(state, calendarGrid) {
     const timeLabelContainer = document.createElement('div');
     timeLabelContainer.className = 'border-r border-stone-200';
     
-    // --- TIME LABELS with Hour and Half-Hour marks ---
+    // --- TIME LABELS with Hour marks ---
     let timeLabelsHTML = '<div class="h-16 border-b border-stone-200 flex items-center justify-center text-base font-medium text-slate-600">時間</div><div class="relative h-[1020px]">';
     for (let h = 6; h <= 22; h++) {
         // Main hour label
         const hourTop = (h - 6) * 60;
         timeLabelsHTML += `<div class="absolute text-sm text-slate-600 font-medium text-center w-full" style="top: ${hourTop - 10}px; height: 20px; z-index: 5;">${String(h).padStart(2, '0')}:00</div>`;
-
-        // Secondary half-hour label
-        if (h < 22) { // Avoid adding a label for 22:30 that would be at the very bottom edge
-            const halfHourTop = hourTop + 30;
-            timeLabelsHTML += `<div class="absolute text-xs text-slate-400 text-center w-full" style="top: ${halfHourTop - 7}px; height: 14px; z-index: 5;">${String(h).padStart(2, '0')}:30</div>`;
-        }
     }
     timeLabelsHTML += '</div>';
     timeLabelContainer.innerHTML = timeLabelsHTML;

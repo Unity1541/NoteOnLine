@@ -1,4 +1,5 @@
 
+
 import { auth, db } from './firebase.js';
 import { 
     signInWithEmailAndPassword, 
@@ -65,8 +66,10 @@ const eventTitleInput = document.getElementById('event-title-input');
 const eventChapterInput = document.getElementById('event-chapter-input');
 const eventPagesInput = document.getElementById('event-pages-input');
 const eventDateSelect = document.getElementById('event-date-select');
-const eventStartTimeInput = document.getElementById('event-start-time-input');
-const eventEndTimeInput = document.getElementById('event-end-time-input');
+const eventStartHourInput = document.getElementById('event-start-hour-input');
+const eventStartMinuteInput = document.getElementById('event-start-minute-input');
+const eventEndHourInput = document.getElementById('event-end-hour-input');
+const eventEndMinuteInput = document.getElementById('event-end-minute-input');
 const eventNotesInput = document.getElementById('event-notes-input');
 const eventColorPicker = document.getElementById('event-color-picker');
 const saveEventBtn = document.getElementById('save-event-btn');
@@ -202,13 +205,13 @@ async function handleSaveEvent(e) {
         chapter: eventChapterInput.value,
         pages: eventPagesInput.value,
         date: eventDateSelect.value,
-        startTime: eventStartTimeInput.value,
-        endTime: eventEndTimeInput.value,
+        startTime: `${eventStartHourInput.value}:${eventStartMinuteInput.value}`,
+        endTime: `${eventEndHourInput.value}:${eventEndMinuteInput.value}`,
         notes: eventNotesInput.value,
         color: state.selectedColor,
     };
 
-    if (!eventData.title || !eventData.date || !eventData.startTime || !eventData.endTime) {
+    if (!eventData.title || !eventData.date || !eventStartHourInput.value || !eventStartMinuteInput.value || !eventEndHourInput.value || !eventEndMinuteInput.value) {
         formStatus.textContent = '請填寫所有必填欄位！';
         formStatus.className = 'text-red-500 text-sm text-center h-5';
         return;
@@ -239,8 +242,16 @@ function openEditForm(eventToEdit) {
         eventChapterInput.value = eventToEdit.chapter || '';
         eventPagesInput.value = eventToEdit.pages || '';
         eventDateSelect.value = eventToEdit.date;
-        eventStartTimeInput.value = eventToEdit.startTime;
-        eventEndTimeInput.value = eventToEdit.endTime;
+        if (eventToEdit.startTime) {
+            const [startHour, startMinute] = eventToEdit.startTime.split(':');
+            eventStartHourInput.value = startHour;
+            eventStartMinuteInput.value = startMinute;
+        }
+        if (eventToEdit.endTime) {
+            const [endHour, endMinute] = eventToEdit.endTime.split(':');
+            eventEndHourInput.value = endHour;
+            eventEndMinuteInput.value = endMinute;
+        }
         eventNotesInput.value = eventToEdit.notes || '';
         state.selectedColor = eventToEdit.color;
         // Re-render the form parts to update color picker
@@ -360,33 +371,75 @@ function renderUserProgressChart(allEvents) {
 
 function renderAdminEventsList(allEvents) {
     adminEventsList.innerHTML = '';
-    if (allEvents.length === 0) {
-        adminEventsList.innerHTML = '<p class="text-slate-500 text-center p-4">目前沒有任何使用者的事件。</p>';
+    
+    // Filter events to the current week
+    const weekDays = getWeekDays(state.currentWeekStart);
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0);
+    const lastDay = new Date(weekDays[6]);
+    lastDay.setHours(23, 59, 59, 999);
+
+    const weekEvents = allEvents.filter(e => {
+        const eventDate = new Date(e.date + 'T00:00');
+        return eventDate >= firstDay && eventDate <= lastDay;
+    });
+
+    if (weekEvents.length === 0) {
+        adminEventsList.innerHTML = '<p class="text-slate-500 text-center p-4">本週沒有任何使用者的事件。</p>';
         return;
     }
-    
-    allEvents.forEach(event => {
-        const eventEl = document.createElement('div');
-        eventEl.className = `flex items-center gap-4 p-3 bg-white/80 rounded-2xl shadow-md border-l-8 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]`;
-        eventEl.style.borderLeftColor = event.color;
 
-        eventEl.innerHTML = `
-            <div class="flex-1 min-w-0">
-                <p class="font-bold text-slate-800 truncate">${event.title}</p>
-                <p class="text-sm text-slate-600 font-medium mt-1">${event.date} ${event.startTime}-${event.endTime}</p>
-                <p class="text-xs text-slate-500 font-mono mt-2 bg-slate-100/70 inline-block px-2 py-1 rounded">User: ${event.email || event.uid}</p>
-            </div>
-            <div class="flex-shrink-0 flex items-center gap-1">
-                <button data-event='${JSON.stringify(event)}' class="admin-edit-btn text-slate-500 hover:text-indigo-600 hover:bg-indigo-100/50 p-3 rounded-full transition-colors duration-200">
-                    <i data-lucide="edit-3" class="w-5 h-5"></i>
-                </button>
-                <button data-id="${event.id}" class="admin-delete-btn text-slate-500 hover:text-red-500 hover:bg-red-100/50 p-3 rounded-full transition-colors duration-200">
-                    <i data-lucide="trash-2" class="w-5 h-5"></i>
-                </button>
-            </div>
+    // Group events by user email
+    const eventsByUser = weekEvents.reduce((acc, event) => {
+        const email = event.email || '未知使用者';
+        if (!acc[email]) {
+            acc[email] = [];
+        }
+        acc[email].push(event);
+        return acc;
+    }, {});
+
+    const sortedUsers = Object.keys(eventsByUser).sort();
+
+    sortedUsers.forEach(email => {
+        const userGroupEl = document.createElement('div');
+        userGroupEl.className = 'user-group bg-white/50 backdrop-blur-sm p-4 rounded-2xl shadow-inner border border-slate-200/60 mb-6';
+        
+        let userEventsHTML = `
+            <h3 class="text-lg font-semibold text-indigo-800 border-b border-indigo-200/80 pb-2 mb-4 flex items-center gap-2">
+                <i data-lucide="user-circle-2" class="w-6 h-6"></i>
+                ${email}
+            </h3>
+            <div class="space-y-3">
         `;
-        adminEventsList.appendChild(eventEl);
+
+        const userEvents = eventsByUser[email].sort((a, b) => new Date(`${a.date}T${a.startTime}`) - new Date(`${b.date}T${b.startTime}`));
+
+        userEvents.forEach(event => {
+            userEventsHTML += `
+                <div class="flex items-center gap-4 p-3 bg-white/80 rounded-2xl shadow-md border-l-8 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]" style="border-left-color: ${event.color};">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-bold text-slate-800 truncate">${event.title}</p>
+                        <p class="text-sm text-slate-600 font-medium mt-1">${event.date} ${event.startTime}-${event.endTime}</p>
+                        ${event.completed ? '<span class="text-xs text-green-600 font-bold bg-green-100/70 inline-block px-2 py-0.5 rounded-full mt-2">已完成</span>' : ''}
+                    </div>
+                    <div class="flex-shrink-0 flex items-center gap-1">
+                        <button data-event='${JSON.stringify(event)}' class="admin-edit-btn text-slate-500 hover:text-indigo-600 hover:bg-indigo-100/50 p-3 rounded-full transition-colors duration-200">
+                            <i data-lucide="edit-3" class="w-5 h-5"></i>
+                        </button>
+                        <button data-id="${event.id}" class="admin-delete-btn text-slate-500 hover:text-red-500 hover:bg-red-100/50 p-3 rounded-full transition-colors duration-200">
+                            <i data-lucide="trash-2" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        userEventsHTML += '</div>';
+        userGroupEl.innerHTML = userEventsHTML;
+        adminEventsList.appendChild(userGroupEl);
     });
+
     lucide.createIcons();
 }
 
