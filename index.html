@@ -1,0 +1,221 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>藥師國考記事本</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="public/css/style.css">
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="min-h-screen flex items-center justify-center p-4">
+      <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8 w-full max-w-md relative overflow-hidden">
+        <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-2xl"></div>
+        <div class="absolute -bottom-10 -left-10 w-32 h-32 bg-gradient-to-br from-pink-400/10 to-orange-400/10 rounded-full blur-2xl"></div>
+        
+        <div class="relative z-10">
+          <div class="text-center mb-8">
+            <div class="mb-4">
+              <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg">
+                <i data-lucide="cloud" class="w-8 h-8 text-white"></i>
+              </div>
+            </div>
+            <h1 class="text-3xl font-light bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              藥師國考記事本
+            </h1>
+            <p class="text-slate-600">請登入給定的帳號以使用您的雲端記事本</p>
+          </div>
+          
+          <form id="login-form" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">電子郵件</label>
+              <input
+                type="email"
+                id="email-input"
+                class="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white/60 backdrop-blur-sm transition-all duration-200"
+                placeholder="輸入您的電子郵件"
+                required
+              />
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">密碼</label>
+              <input
+                type="password"
+                id="password-input"
+                class="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-400 focus:border-transparent bg-white/60 backdrop-blur-sm transition-all duration-200"
+                placeholder="輸入密碼"
+                required
+              />
+            </div>
+            
+            <button
+              type="submit"
+              id="login-btn"
+              class="w-full flex items-center justify-center bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 text-white py-3 rounded-xl transition-all duration-300 font-semibold mt-6 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-75 disabled:scale-100"
+            >
+              <span class="btn-text">登入</span>
+              <div class="spinner hidden w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            </button>
+          </form>
+          <p id="login-error" class="text-red-500 text-center text-sm mt-4"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Planner App -->
+  <div id="planner-app" class="hidden">
+    <div class="p-4 relative overflow-hidden min-h-screen">
+      <div class="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+        <div class="absolute -top-40 -right-40 w-96 h-96 bg-gradient-to-br from-blue-300/10 to-purple-300/10 rounded-full blur-3xl animate-pulse"></div>
+        <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-br from-pink-300/10 to-orange-300/10 rounded-full blur-3xl animate-pulse"></div>
+        <div class="absolute top-1/3 left-1/3 w-64 h-64 bg-gradient-to-br from-green-300/5 to-blue-300/5 rounded-full blur-3xl animate-pulse"></div>
+      </div>
+      
+      <div class="max-w-8xl mx-auto relative z-10">
+        <header id="app-header" class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg p-6 mb-6 border border-white/30 relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full blur-2xl"></div>
+          
+          <div class="flex items-center justify-between relative z-10">
+            <div>
+              <div class="flex items-center gap-4 mb-2">
+                <h1 class="text-3xl font-light bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                  藥師國考記事本
+                </h1>
+                <div class="relative">
+                  <span id="user-display-name" class="text-sm text-white bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 px-4 py-2 rounded-full shadow-lg font-medium">
+                  </span>
+                  <div class="absolute -inset-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 rounded-full blur opacity-30 animate-pulse"></div>
+                </div>
+              </div>
+              <p id="week-display" class="text-lg text-slate-700 font-medium">
+              </p>
+            </div>
+            <div class="flex items-center gap-4">
+              <button id="prev-week-btn" class="p-3 bg-white/30 hover:bg-white/50 rounded-xl transition-all duration-200 backdrop-blur-sm shadow-md hover:shadow-lg transform hover:scale-105">
+                <i data-lucide="chevron-left" class="w-5 h-5 text-slate-700"></i>
+              </button>
+              <button id="today-btn" class="px-4 py-3 bg-white/30 hover:bg-white/50 rounded-xl transition-all duration-200 backdrop-blur-sm shadow-md hover:shadow-lg transform hover:scale-105 text-sm font-medium text-slate-700 hover:text-indigo-600">
+                今天
+              </button>
+              <button id="next-week-btn" class="p-3 bg-white/30 hover:bg-white/50 rounded-xl transition-all duration-200 backdrop-blur-sm shadow-md hover:shadow-lg transform hover:scale-105">
+                <i data-lucide="chevron-right" class="w-5 h-5 text-slate-700"></i>
+              </button>
+              <div class="flex items-center gap-2 bg-white/50 backdrop-blur-sm rounded-xl px-3 py-3 shadow-md">
+                <i data-lucide="clock" class="w-5 h-5 text-indigo-600"></i>
+                <span id="current-time-display" class="text-sm text-slate-700 font-medium"></span>
+              </div>
+              <button id="logout-btn" class="p-3 bg-white/30 hover:bg-red-100/70 text-red-500 hover:text-red-600 rounded-xl transition-all duration-200 text-sm font-medium backdrop-blur-sm shadow-md hover:shadow-lg transform hover:scale-105">
+                <i data-lucide="log-out" class="w-5 h-5"></i>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 overflow-hidden">
+              <div class="p-4 bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5 border-b border-white/20 backdrop-blur-sm">
+                <h2 class="text-xl font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">週間時程表</h2>
+              </div>
+              
+              <div class="overflow-x-auto">
+                <div id="calendar-grid" class="grid grid-cols-8 min-w-[800px]">
+                  <!-- Time labels and day columns will be generated by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="space-y-6" id="sidebar">
+            <div id="form-container">
+              <button id="show-add-form-btn" class="w-full bg-white/20 hover:bg-white/40 border-2 border-dashed border-indigo-300 rounded-3xl p-6 transition-all duration-300 group backdrop-blur-sm shadow-lg hover:shadow-xl transform hover:scale-105">
+                <i data-lucide="plus" class="w-8 h-8 text-indigo-600 mx-auto mb-2 group-hover:scale-110 transition-transform duration-300"></i>
+                <span class="text-indigo-700 font-bold">新增行程</span>
+              </button>
+
+              <div id="add-event-form" class="hidden bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6">
+                <h3 id="form-title" class="text-lg font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-4"></h3>
+                <form class="space-y-4">
+                  <input type="hidden" id="event-id-input">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">工作項目</label>
+                    <input type="text" id="event-title-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="輸入工作項目" required>
+                  </div>
+                  <div class="space-y-2">
+                    <label class="block text-sm font-medium text-slate-700">章節 (選填)</label>
+                    <input type="text" id="event-chapter-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="章節名稱，例如：第一章 細胞結構">
+                    <input type="text" id="event-pages-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" placeholder="頁數，例如: p.15-20">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">日期</label>
+                    <select id="event-date-select" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" required></select>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1">開始時間</label>
+                      <input type="time" id="event-start-time-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" required>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1">結束時間</label>
+                      <input type="time" id="event-end-time-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" required>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">備註</label>
+                    <textarea id="event-notes-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent resize-none" placeholder="輸入備註內容（選填）" rows="3"></textarea>
+
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">顏色</label>
+                    <div id="event-color-picker" class="flex flex-wrap gap-2"></div>
+                  </div>
+                  <div class="flex gap-3 pt-2">
+                    <button type="submit" id="save-event-btn" class="flex-1 flex items-center justify-center bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white py-3 rounded-xl transition-all duration-300 font-bold shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-75 disabled:scale-100">
+                        <span class="btn-text"></span>
+                        <div class="spinner hidden w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    </button>
+                    <button type="button" id="cancel-edit-btn" class="flex-1 bg-slate-200/70 hover:bg-slate-300/70 text-slate-700 py-3 rounded-xl transition-all duration-200 font-medium backdrop-blur-sm">取消</button>
+                  </div>
+                  <p id="form-status" class="text-sm text-center h-5"></p>
+                </form>
+              </div>
+            </div>
+
+            <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6 relative overflow-hidden">
+              <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-400/10 to-purple-400/10 rounded-full blur-xl"></div>
+              <h3 class="text-lg font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-4 relative z-10">本週摘要</h3>
+              <div id="summary-content" class="space-y-3 relative z-10"></div>
+            </div>
+
+            <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6 relative overflow-hidden">
+              <div class="absolute -top-10 -left-10 w-32 h-32 bg-gradient-to-br from-green-400/10 to-blue-400/10 rounded-full blur-2xl"></div>
+              <div class="flex items-center gap-2 mb-4 relative z-10">
+                <i data-lucide="check-square" class="w-5 h-5 text-indigo-600"></i>
+                <h3 class="text-lg font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">計劃檢核表</h3>
+                <span class="text-xs bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 px-3 py-1 rounded-full font-medium shadow-sm">點擊圓圈勾選</span>
+              </div>
+              <div id="checklist-content" class="space-y-3 max-h-64 overflow-y-auto relative z-10"></div>
+            </div>
+            
+          </aside>
+        </main>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Firebase SDK -->
+  <script type="module" src="public/js/firebase.js"></script>
+  <script type="module" src="public/js/planner-renderer.js"></script>
+  <script type="module" src="public/js/script.js"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
