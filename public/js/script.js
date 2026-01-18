@@ -31,7 +31,8 @@ let state = {
     unsubscribeEvents: null,
     currentWeekStart: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
     editingEventId: null,
-    selectedColor: colorOptions[0]
+    selectedColor: colorOptions[0],
+    selectedEventIds: new Set()
 };
 
 // --- DOM SELECTORS ---
@@ -68,6 +69,10 @@ const cancelEditBtn = document.getElementById('cancel-edit-btn');
 const formStatus = document.getElementById('form-status');
 const summaryContent = document.getElementById('summary-content');
 const checklistContent = document.getElementById('checklist-content');
+const userBatchControls = document.getElementById('user-batch-controls');
+const userSelectAllCheckbox = document.getElementById('user-select-all-checkbox');
+const userBatchDeleteBtn = document.getElementById('user-batch-delete-btn');
+const userSelectedCountSpan = document.getElementById('user-selected-count');
 
 // Sidebar DOM elements for the renderer
 const sidebarDOMElements = { summaryContent, checklistContent, eventDateSelect, eventColorPicker };
@@ -152,6 +157,7 @@ function subscribeToEvents(uid) {
         // Re-render only the parts that depend on events
         renderCalendarGrid(state, calendarGrid);
         renderSidebar(state, sidebarDOMElements);
+        updateUserBatchControlsUI();
     });
 }
 
@@ -315,6 +321,112 @@ async function handleChecklistClick(e) {
     }
 }
 
+// --- BATCH DELETE FUNCTIONS ---
+function updateUserBatchControlsUI() {
+    const allCheckboxes = checklistContent.querySelectorAll('.checklist-checkbox');
+    const checkedCount = state.selectedEventIds.size;
+    
+    userSelectedCountSpan.textContent = checkedCount;
+    userBatchDeleteBtn.disabled = checkedCount === 0;
+    
+    // Show/hide batch controls based on whether there are events
+    if (allCheckboxes.length > 0) {
+        userBatchControls.classList.remove('hidden');
+    } else {
+        userBatchControls.classList.add('hidden');
+    }
+    
+    // Update select all checkbox state
+    if (allCheckboxes.length > 0 && checkedCount === allCheckboxes.length) {
+        userSelectAllCheckbox.checked = true;
+        userSelectAllCheckbox.indeterminate = false;
+    } else if (checkedCount > 0) {
+        userSelectAllCheckbox.checked = false;
+        userSelectAllCheckbox.indeterminate = true;
+    } else {
+        userSelectAllCheckbox.checked = false;
+        userSelectAllCheckbox.indeterminate = false;
+    }
+}
+
+function handleUserCheckboxChange(e) {
+    const checkbox = e.target.closest('.checklist-checkbox');
+    if (!checkbox) return;
+    
+    const eventId = checkbox.dataset.eventId;
+    const checklistItem = checkbox.closest('.checklist-item');
+    
+    if (checkbox.checked) {
+        state.selectedEventIds.add(eventId);
+        checklistItem.classList.add('ring-2', 'ring-indigo-400');
+    } else {
+        state.selectedEventIds.delete(eventId);
+        checklistItem.classList.remove('ring-2', 'ring-indigo-400');
+    }
+    
+    updateUserBatchControlsUI();
+}
+
+function handleUserSelectAll() {
+    const allCheckboxes = checklistContent.querySelectorAll('.checklist-checkbox');
+    const shouldSelectAll = userSelectAllCheckbox.checked;
+    
+    allCheckboxes.forEach(checkbox => {
+        const eventId = checkbox.dataset.eventId;
+        const checklistItem = checkbox.closest('.checklist-item');
+        
+        checkbox.checked = shouldSelectAll;
+        
+        if (shouldSelectAll) {
+            state.selectedEventIds.add(eventId);
+            checklistItem.classList.add('ring-2', 'ring-indigo-400');
+        } else {
+            state.selectedEventIds.delete(eventId);
+            checklistItem.classList.remove('ring-2', 'ring-indigo-400');
+        }
+    });
+    
+    updateUserBatchControlsUI();
+}
+
+async function handleUserBatchDelete() {
+    const count = state.selectedEventIds.size;
+    if (count === 0) return;
+    
+    if (!window.confirm(`確定要刪除這 ${count} 個行程嗎？此操作無法復原。`)) {
+        return;
+    }
+    
+    userBatchDeleteBtn.disabled = true;
+    userBatchDeleteBtn.innerHTML = `
+        <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>刪除中...</span>
+    `;
+    
+    try {
+        const deletePromises = Array.from(state.selectedEventIds).map(eventId => 
+            deleteDoc(doc(db, "events", eventId))
+        );
+        await Promise.all(deletePromises);
+        
+        // Clear selection after successful delete
+        state.selectedEventIds.clear();
+        userSelectAllCheckbox.checked = false;
+        userSelectAllCheckbox.indeterminate = false;
+    } catch (error) {
+        console.error("Error batch deleting events:", error);
+        alert('刪除過程中發生錯誤，請稍後再試。');
+    } finally {
+        userBatchDeleteBtn.disabled = false;
+        userBatchDeleteBtn.innerHTML = `
+            <i data-lucide="trash-2" class="w-3 h-3"></i>
+            <span>刪除 (<span id="user-selected-count">0</span>)</span>
+        `;
+        lucide.createIcons();
+        updateUserBatchControlsUI();
+    }
+}
+
 // --- INITIALIZATION ---
 function init() {
     const savedWeekStart = sessionStorage.getItem('currentWeekStart');
@@ -336,6 +448,9 @@ function init() {
     eventColorPicker.addEventListener('click', handleColorPick);
     calendarGrid.addEventListener('click', handleEventClick);
     checklistContent.addEventListener('click', handleChecklistClick);
+    checklistContent.addEventListener('change', handleUserCheckboxChange);
+    userSelectAllCheckbox.addEventListener('change', handleUserSelectAll);
+    userBatchDeleteBtn.addEventListener('click', handleUserBatchDelete);
     
     setInterval(() => {
         if(state.isLoggedIn) {

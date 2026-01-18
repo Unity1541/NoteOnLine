@@ -42,7 +42,8 @@ let state = {
     currentWeekStart: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
     editingEventId: null,
     selectedColor: colorOptions[0],
-    chartInstance: null
+    chartInstance: null,
+    selectedEventIds: new Set()
 };
 
 // --- DOM SELECTORS ---
@@ -82,6 +83,10 @@ const formContainer = document.getElementById('form-container');
 const adminEventsList = document.getElementById('admin-events-list');
 const userProgressChartCanvas = document.getElementById('user-progress-chart');
 const chartNoData = document.getElementById('chart-no-data');
+const batchControls = document.getElementById('batch-controls');
+const selectAllCheckbox = document.getElementById('select-all-checkbox');
+const batchDeleteBtn = document.getElementById('batch-delete-btn');
+const selectedCountSpan = document.getElementById('selected-count');
 
 // The form elements are needed for the sidebar renderer
 const sidebarDOMElements = { summaryContent: null, checklistContent: null, eventDateSelect, eventColorPicker };
@@ -416,8 +421,10 @@ function renderAdminEventsList(allEvents) {
         const userEvents = eventsByUser[email].sort((a, b) => new Date(`${a.date}T${a.startTime}`) - new Date(`${b.date}T${b.startTime}`));
 
         userEvents.forEach(event => {
+            const isChecked = state.selectedEventIds.has(event.id) ? 'checked' : '';
             userEventsHTML += `
-                <div class="flex items-center gap-4 p-3 bg-white/80 rounded-2xl shadow-md border-l-8 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]" style="border-left-color: ${event.color};">
+                <div class="flex items-center gap-4 p-3 bg-white/80 rounded-2xl shadow-md border-l-8 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${isChecked ? 'ring-2 ring-indigo-400' : ''}" style="border-left-color: ${event.color};">
+                    <input type="checkbox" data-event-id="${event.id}" class="event-checkbox w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0" ${isChecked}>
                     <div class="flex-1 min-w-0">
                         <p class="font-bold text-slate-800 truncate">${event.title}</p>
                         <p class="text-sm text-slate-600 font-medium mt-1">${event.date} ${event.startTime}-${event.endTime}</p>
@@ -441,6 +448,114 @@ function renderAdminEventsList(allEvents) {
     });
 
     lucide.createIcons();
+    
+    // Show batch controls if there are events
+    if (weekEvents.length > 0) {
+        batchControls.classList.remove('hidden');
+    } else {
+        batchControls.classList.add('hidden');
+    }
+    
+    // Reset selection state after re-render but preserve if re-rendering same data
+    updateBatchControlsUI();
+}
+
+function updateBatchControlsUI() {
+    const allCheckboxes = adminEventsList.querySelectorAll('.event-checkbox');
+    const checkedCount = state.selectedEventIds.size;
+    
+    selectedCountSpan.textContent = checkedCount;
+    batchDeleteBtn.disabled = checkedCount === 0;
+    
+    // Update select all checkbox state
+    if (allCheckboxes.length > 0 && checkedCount === allCheckboxes.length) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else if (checkedCount > 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    }
+}
+
+function handleCheckboxChange(e) {
+    const checkbox = e.target.closest('.event-checkbox');
+    if (!checkbox) return;
+    
+    const eventId = checkbox.dataset.eventId;
+    const eventCard = checkbox.closest('div.flex');
+    
+    if (checkbox.checked) {
+        state.selectedEventIds.add(eventId);
+        eventCard.classList.add('ring-2', 'ring-indigo-400');
+    } else {
+        state.selectedEventIds.delete(eventId);
+        eventCard.classList.remove('ring-2', 'ring-indigo-400');
+    }
+    
+    updateBatchControlsUI();
+}
+
+function handleSelectAll() {
+    const allCheckboxes = adminEventsList.querySelectorAll('.event-checkbox');
+    const shouldSelectAll = selectAllCheckbox.checked;
+    
+    allCheckboxes.forEach(checkbox => {
+        const eventId = checkbox.dataset.eventId;
+        const eventCard = checkbox.closest('div.flex');
+        
+        checkbox.checked = shouldSelectAll;
+        
+        if (shouldSelectAll) {
+            state.selectedEventIds.add(eventId);
+            eventCard.classList.add('ring-2', 'ring-indigo-400');
+        } else {
+            state.selectedEventIds.delete(eventId);
+            eventCard.classList.remove('ring-2', 'ring-indigo-400');
+        }
+    });
+    
+    updateBatchControlsUI();
+}
+
+async function handleBatchDelete() {
+    const count = state.selectedEventIds.size;
+    if (count === 0) return;
+    
+    if (!window.confirm(`(管理員) 確定要刪除這 ${count} 個事件嗎？此操作無法復原。`)) {
+        return;
+    }
+    
+    batchDeleteBtn.disabled = true;
+    batchDeleteBtn.innerHTML = `
+        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>刪除中...</span>
+    `;
+    
+    try {
+        const deletePromises = Array.from(state.selectedEventIds).map(eventId => 
+            deleteDoc(doc(db, "events", eventId))
+        );
+        await Promise.all(deletePromises);
+        
+        // Clear selection after successful delete
+        state.selectedEventIds.clear();
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    } catch (error) {
+        console.error("Error batch deleting events:", error);
+        alert('刪除過程中發生錯誤，請稍後再試。');
+    } finally {
+        batchDeleteBtn.disabled = false;
+        batchDeleteBtn.innerHTML = `
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>刪除選取 (<span id="selected-count">0</span>)</span>
+        `;
+        lucide.createIcons();
+        updateBatchControlsUI();
+    }
 }
 
 async function handleAdminActions(e) {
@@ -530,6 +645,11 @@ function init() {
     eventColorPicker.addEventListener('click', handleColorPick);
     
     adminEventsList.addEventListener('click', handleAdminActions);
+    
+    // Batch delete event listeners
+    adminEventsList.addEventListener('change', handleCheckboxChange);
+    selectAllCheckbox.addEventListener('change', handleSelectAll);
+    batchDeleteBtn.addEventListener('click', handleBatchDelete);
     
     setInterval(() => {
         if(state.isLoggedIn) {

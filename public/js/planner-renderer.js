@@ -236,6 +236,7 @@ function renderChecklist(state, checklistContent) {
             item.dataset.eventId = event.id;
             
             item.innerHTML = `
+                <input type="checkbox" data-event-id="${event.id}" class="checklist-checkbox w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0 mt-1">
                 <button class="toggle-complete-btn flex-shrink-0 hover:scale-110 transition-transform duration-200 pt-1" type="button">
                     <i data-lucide="${event.completed ? 'check-circle' : 'circle'}" class="w-6 h-6 ${event.completed ? 'text-green-600' : 'text-slate-400 hover:text-indigo-500'}"></i>
                 </button>

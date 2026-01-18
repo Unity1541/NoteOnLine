@@ -133,10 +133,22 @@
                <p id="chart-no-data" class="text-center text-slate-500 hidden py-16">本週沒有任何活動可供分析。</p>
              </div>
              <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6">
-                <h2 class="text-2xl font-bold bg-gradient-to-r from-amber-600 to-red-600 bg-clip-text text-transparent mb-4 flex items-center gap-2">
-                  <i data-lucide="users-2" class="w-7 h-7"></i>
-                  管理所有使用者事件
-                </h2>
+                <div class="flex items-center justify-between mb-4">
+                  <h2 class="text-2xl font-bold bg-gradient-to-r from-amber-600 to-red-600 bg-clip-text text-transparent flex items-center gap-2">
+                    <i data-lucide="users-2" class="w-7 h-7"></i>
+                    管理所有使用者事件
+                  </h2>
+                  <div id="batch-controls" class="flex items-center gap-3 hidden">
+                    <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-600 hover:text-slate-800 transition-colors">
+                      <input type="checkbox" id="select-all-checkbox" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                      <span>全選</span>
+                    </label>
+                    <button id="batch-delete-btn" class="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50 disabled:transform-none disabled:cursor-not-allowed" disabled>
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                      <span>刪除選取 (<span id="selected-count">0</span>)</span>
+                    </button>
+                  </div>
+                </div>
                 <div id="admin-events-list" class="space-y-4 max-h-[500px] overflow-y-auto bg-slate-50/50 p-4 rounded-xl border border-slate-200/50">
                     <p class="text-slate-500 p-4 text-center">正在載入事件...</p>
                 </div>
