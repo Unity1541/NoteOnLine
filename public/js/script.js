@@ -55,6 +55,7 @@ const showAddFormBtn = document.getElementById('show-add-form-btn');
 const addEventForm = document.getElementById('add-event-form');
 const formTitle = document.getElementById('form-title');
 const eventTitleInput = document.getElementById('event-title-input');
+const eventWorkspaceInput = document.getElementById('event-workspace-input');
 const eventChapterInput = document.getElementById('event-chapter-input');
 const eventPagesInput = document.getElementById('event-pages-input');
 const eventDateSelect = document.getElementById('event-date-select');
@@ -165,6 +166,7 @@ async function handleSaveEvent(e) {
     e.preventDefault();
     const eventData = {
         title: eventTitleInput.value,
+        workspace: eventWorkspaceInput.value.trim(),
         chapter: eventChapterInput.value,
         pages: eventPagesInput.value,
         date: eventDateSelect.value,
@@ -209,6 +211,7 @@ function openEditForm(eventId) {
         state.editingEventId = eventId;
         showForm(true);
         eventTitleInput.value = eventToEdit.title;
+        eventWorkspaceInput.value = eventToEdit.workspace || '';
         eventChapterInput.value = eventToEdit.chapter || '';
         eventPagesInput.value = eventToEdit.pages || '';
         eventDateSelect.value = eventToEdit.date;
@@ -271,6 +274,7 @@ function hideForm() {
     state.editingEventId = null;
     addEventForm.querySelector('form').reset();
     eventTitleInput.value = '';
+    eventWorkspaceInput.value = '';
     eventNotesInput.value = '';
     eventChapterInput.value = '';
     eventPagesInput.value = '';

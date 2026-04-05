@@ -94,6 +94,7 @@ export function renderCalendarGrid(state, calendarGrid) {
             const eventStyle = `top: ${Math.max(0, top)}px; height: ${Math.max(12, height)}px; background-color: ${event.color}; border-left-color: ${event.completed ? '#10b981' : '#6366f1'}`;
             
             const tooltipParts = [event.title];
+            if (event.workspace) tooltipParts.push(`工作區: ${event.workspace}`);
             if (event.chapter) tooltipParts.push(`章節: ${event.chapter}`);
             if (event.pages) tooltipParts.push(`頁數: ${event.pages}`);
             if (event.notes) tooltipParts.push(`備註: ${event.notes}`);
@@ -104,6 +105,7 @@ export function renderCalendarGrid(state, calendarGrid) {
                     <div class="p-1.5 h-full flex flex-col justify-center relative overflow-hidden">
                       <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                       <div class="font-semibold text-slate-800 text-sm leading-tight relative z-10 truncate ${event.completed ? 'line-through text-slate-600' : ''}">${event.title}</div>
+                      ${event.workspace ? `<div class="text-xs text-slate-700 font-medium relative z-10 truncate">${event.workspace}</div>` : ''}
                       ${event.chapter ? `<div class="text-xs text-slate-700 font-medium relative z-10 truncate">${event.chapter}</div>` : ''}
                       ${event.pages ? `<div class="text-xs text-slate-700 font-medium relative z-10">${event.pages}</div>` : ''}
                       <div class="text-xs text-slate-700 font-medium relative z-10 mt-0.5">${event.startTime}</div>
@@ -242,8 +244,10 @@ function renderChecklist(state, checklistContent) {
                 </button>
                 <div class="flex-1 min-w-0">
                     <div class="font-bold text-sm leading-tight ${event.completed ? 'text-green-800 line-through' : 'text-slate-800'}">${event.title}</div>
-                     ${event.chapter || event.pages ? `
+                     ${event.workspace || event.chapter || event.pages ? `
                         <div class="text-xs text-slate-600 font-medium mt-1 bg-white/40 rounded-lg px-2 py-0.5 inline-flex items-center gap-2 flex-wrap">
+                            ${event.workspace ? `<span><i data-lucide="map-pinned" class="inline w-3 h-3 mr-1"></i>${event.workspace}</span>` : ''}
+                            ${event.workspace && (event.chapter || event.pages) ? `<span class="opacity-50">|</span>` : ''}
                             ${event.chapter ? `<span><i data-lucide="book" class="inline w-3 h-3 mr-1"></i>${event.chapter}</span>` : ''}
                             ${event.chapter && event.pages ? `<span class="opacity-50">|</span>` : ''}
                             ${event.pages ? `<span><i data-lucide="file-text" class="inline w-3 h-3 mr-1"></i>${event.pages}</span>` : ''}

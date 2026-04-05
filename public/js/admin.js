@@ -43,7 +43,9 @@ let state = {
     editingEventId: null,
     selectedColor: colorOptions[0],
     chartInstance: null,
-    selectedEventIds: new Set()
+    selectedEventIds: new Set(),
+    allEvents: [], // Store all events for copying
+    selectedWorkspace: '__ALL__'
 };
 
 // --- DOM SELECTORS ---
@@ -64,6 +66,7 @@ const logoutBtn = document.getElementById('logout-btn');
 const addEventForm = document.getElementById('add-event-form');
 const formTitle = document.getElementById('form-title');
 const eventTitleInput = document.getElementById('event-title-input');
+const eventWorkspaceInput = document.getElementById('event-workspace-input');
 const eventChapterInput = document.getElementById('event-chapter-input');
 const eventPagesInput = document.getElementById('event-pages-input');
 const eventDateSelect = document.getElementById('event-date-select');
@@ -81,12 +84,17 @@ const formStatus = document.getElementById('form-status');
 const adminPanel = document.getElementById('admin-panel');
 const formContainer = document.getElementById('form-container');
 const adminEventsList = document.getElementById('admin-events-list');
+const calendarGrid = document.getElementById('calendar-grid'); // Added calendar grid
 const userProgressChartCanvas = document.getElementById('user-progress-chart');
 const chartNoData = document.getElementById('chart-no-data');
 const batchControls = document.getElementById('batch-controls');
 const selectAllCheckbox = document.getElementById('select-all-checkbox');
 const batchDeleteBtn = document.getElementById('batch-delete-btn');
 const selectedCountSpan = document.getElementById('selected-count');
+const copyLastWeekBtn = document.getElementById('copy-last-week-btn');
+const copySourceWeekInput = document.getElementById('copy-source-week');
+const workspaceFilterSelect = document.getElementById('workspace-filter-select');
+const printWeeklyScheduleBtn = document.getElementById('print-weekly-schedule-btn');
 
 // The form elements are needed for the sidebar renderer
 const sidebarDOMElements = { summaryContent: null, checklistContent: null, eventDateSelect, eventColorPicker };
@@ -128,6 +136,60 @@ const getWeekDays = (startDate) => {
     return week;
 };
 
+const ALL_WORKSPACES = '__ALL__';
+const UNASSIGNED_WORKSPACE = '__UNASSIGNED__';
+
+const normalizeWorkspace = (workspace) => (workspace || '').trim();
+
+const getWorkspaceKey = (workspace) => normalizeWorkspace(workspace) || UNASSIGNED_WORKSPACE;
+
+const getWorkspaceLabel = (workspace) => normalizeWorkspace(workspace) || '未指定工作區';
+
+const getSelectedWorkspaceLabel = () => {
+    if (state.selectedWorkspace === ALL_WORKSPACES) return '全部工作區';
+    return state.selectedWorkspace === UNASSIGNED_WORKSPACE ? '未指定工作區' : state.selectedWorkspace;
+};
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function getCurrentWeekBounds() {
+    const weekDays = getWeekDays(state.currentWeekStart);
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0);
+
+    const lastDay = new Date(weekDays[6]);
+    lastDay.setHours(23, 59, 59, 999);
+
+    return { weekDays, firstDay, lastDay };
+}
+
+function filterEventsForCurrentWeek(events) {
+    const { firstDay, lastDay } = getCurrentWeekBounds();
+    return events.filter((event) => {
+        const eventDate = new Date(`${event.date}T00:00`);
+        return eventDate >= firstDay && eventDate <= lastDay;
+    });
+}
+
+function filterEventsBySelectedWorkspace(events) {
+    if (state.selectedWorkspace === ALL_WORKSPACES) {
+        return events;
+    }
+
+    return events.filter((event) => getWorkspaceKey(event.workspace) === state.selectedWorkspace);
+}
+
+function getVisibleAdminEvents(events = state.allEvents) {
+    return filterEventsBySelectedWorkspace(events);
+}
+
 
 // --- RENDER FUNCTIONS ---
 function renderAppUI() {
@@ -135,7 +197,8 @@ function renderAppUI() {
         loginScreen.classList.add('hidden');
         plannerApp.classList.remove('hidden');
         renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-        // Admin doesn't have a calendar, but we need to render the form elements.
+        // Admin now has a preview calendar
+        renderCalendarGrid(state, calendarGrid);
         renderSidebar(state, { ...sidebarDOMElements, summaryContent: document.createElement('div'), checklistContent: document.createElement('div')});
         hideForm(); // Init form state to be hidden
         loadAdminData();
@@ -207,6 +270,7 @@ async function handleSaveEvent(e) {
 
     const eventData = {
         title: eventTitleInput.value,
+        workspace: eventWorkspaceInput.value.trim(),
         chapter: eventChapterInput.value,
         pages: eventPagesInput.value,
         date: eventDateSelect.value,
@@ -244,6 +308,7 @@ function openEditForm(eventToEdit) {
         state.editingEventId = eventToEdit.id;
         showForm(true); // isEditing = true
         eventTitleInput.value = eventToEdit.title;
+        eventWorkspaceInput.value = eventToEdit.workspace || '';
         eventChapterInput.value = eventToEdit.chapter || '';
         eventPagesInput.value = eventToEdit.pages || '';
         eventDateSelect.value = eventToEdit.date;
@@ -265,29 +330,56 @@ function openEditForm(eventToEdit) {
 }
 
 // --- ADMIN FEATURES ---
+function populateWorkspaceFilterOptions(events) {
+    if (!workspaceFilterSelect) return;
+
+    const currentValue = state.selectedWorkspace;
+    const workspaceKeys = Array.from(new Set(events.map((event) => getWorkspaceKey(event.workspace)))).sort((a, b) => {
+        if (a === UNASSIGNED_WORKSPACE) return 1;
+        if (b === UNASSIGNED_WORKSPACE) return -1;
+        return a.localeCompare(b, 'zh-Hant');
+    });
+
+    workspaceFilterSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = ALL_WORKSPACES;
+    allOption.textContent = '全部工作區';
+    workspaceFilterSelect.appendChild(allOption);
+
+    workspaceKeys.forEach((key) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = getWorkspaceLabel(key === UNASSIGNED_WORKSPACE ? '' : key);
+        workspaceFilterSelect.appendChild(option);
+    });
+
+    const hasCurrentValue = currentValue === ALL_WORKSPACES || workspaceKeys.includes(currentValue);
+    state.selectedWorkspace = hasCurrentValue ? currentValue : ALL_WORKSPACES;
+    workspaceFilterSelect.value = state.selectedWorkspace;
+}
+
+function renderAdminDashboard() {
+    const visibleEvents = getVisibleAdminEvents(state.allEvents);
+    state.events = visibleEvents;
+    renderAdminEventsList(visibleEvents);
+    renderUserProgressChart(visibleEvents);
+    renderCalendarGrid(state, calendarGrid);
+}
+
 function loadAdminData() {
     if (state.unsubscribeAdminEvents) state.unsubscribeAdminEvents();
     const q = query(collection(db, "events"), orderBy("date", "desc"));
     state.unsubscribeAdminEvents = onSnapshot(q, (snapshot) => {
         const allEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        renderAdminEventsList(allEvents);
-        renderUserProgressChart(allEvents);
+        state.allEvents = allEvents;
+        populateWorkspaceFilterOptions(allEvents);
+        renderAdminDashboard();
     });
 }
 
 function renderUserProgressChart(allEvents) {
-    const weekDays = getWeekDays(state.currentWeekStart);
-    const firstDay = new Date(weekDays[0]);
-    firstDay.setHours(0, 0, 0, 0); // BUG FIX: Set to start of Monday
-
-    const lastDay = new Date(weekDays[6]);
-    lastDay.setHours(23, 59, 59, 999);
-
-    const weekEvents = allEvents.filter(e => {
-        // By appending 'T00:00', we ensure the date is parsed in the local timezone, not UTC.
-        const eventDate = new Date(e.date + 'T00:00');
-        return eventDate >= firstDay && eventDate <= lastDay;
-    });
+    const weekEvents = filterEventsForCurrentWeek(allEvents);
 
     if (weekEvents.length === 0) {
         userProgressChartCanvas.classList.add('hidden');
@@ -377,20 +469,21 @@ function renderUserProgressChart(allEvents) {
 function renderAdminEventsList(allEvents) {
     adminEventsList.innerHTML = '';
     
-    // Filter events to the current week
-    const weekDays = getWeekDays(state.currentWeekStart);
-    const firstDay = new Date(weekDays[0]);
-    firstDay.setHours(0, 0, 0, 0);
-    const lastDay = new Date(weekDays[6]);
-    lastDay.setHours(23, 59, 59, 999);
-
-    const weekEvents = allEvents.filter(e => {
-        const eventDate = new Date(e.date + 'T00:00');
-        return eventDate >= firstDay && eventDate <= lastDay;
+    const weekEvents = filterEventsForCurrentWeek(allEvents);
+    const visibleIds = new Set(weekEvents.map((event) => event.id));
+    state.selectedEventIds.forEach((eventId) => {
+        if (!visibleIds.has(eventId)) {
+            state.selectedEventIds.delete(eventId);
+        }
     });
 
     if (weekEvents.length === 0) {
-        adminEventsList.innerHTML = '<p class="text-slate-500 text-center p-4">本週沒有任何使用者的事件。</p>';
+        const emptyMessage = state.selectedWorkspace === ALL_WORKSPACES
+            ? '本週沒有任何使用者的事件。'
+            : `本週「${getSelectedWorkspaceLabel()}」沒有任何事件。`;
+        adminEventsList.innerHTML = `<p class="text-slate-500 text-center p-4">${emptyMessage}</p>`;
+        batchControls.classList.add('hidden');
+        updateBatchControlsUI();
         return;
     }
 
@@ -422,12 +515,16 @@ function renderAdminEventsList(allEvents) {
 
         userEvents.forEach(event => {
             const isChecked = state.selectedEventIds.has(event.id) ? 'checked' : '';
+            const workspaceBadge = event.workspace
+                ? `<span class="inline-flex items-center gap-1 rounded-full bg-indigo-100/80 px-2 py-0.5 text-xs font-medium text-indigo-700"><i data-lucide="map-pinned" class="w-3 h-3"></i>${event.workspace}</span>`
+                : '';
             userEventsHTML += `
                 <div class="flex items-center gap-4 p-3 bg-white/80 rounded-2xl shadow-md border-l-8 transition-all duration-300 hover:shadow-lg hover:scale-[1.02] ${isChecked ? 'ring-2 ring-indigo-400' : ''}" style="border-left-color: ${event.color};">
                     <input type="checkbox" data-event-id="${event.id}" class="event-checkbox w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0" ${isChecked}>
                     <div class="flex-1 min-w-0">
                         <p class="font-bold text-slate-800 truncate">${event.title}</p>
                         <p class="text-sm text-slate-600 font-medium mt-1">${event.date} ${event.startTime}-${event.endTime}</p>
+                        ${workspaceBadge}
                         ${event.completed ? '<span class="text-xs text-green-600 font-bold bg-green-100/70 inline-block px-2 py-0.5 rounded-full mt-2">已完成</span>' : ''}
                     </div>
                     <div class="flex-shrink-0 flex items-center gap-1">
@@ -577,6 +674,214 @@ async function handleAdminActions(e) {
     }
 }
 
+// --- ADMIN FEATURES ---
+function getWeekStartFromString(weekString) {
+    if (!weekString) return null;
+    const [year, weekpart] = weekString.split('-W');
+    const y = parseInt(year);
+    const w = parseInt(weekpart);
+    // Jan 1st of the year
+    const simple = new Date(y, 0, 1 + (w - 1) * 7);
+    // Find the Monday of that week
+    const dow = simple.getDay();
+    const ISOweekStart = simple;
+    if (dow <= 4)
+        ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+    else
+        ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+    
+    // reset time just in case
+    ISOweekStart.setHours(0,0,0,0);
+    return ISOweekStart;
+}
+
+async function handleCopyLastWeek() {
+    const sourceWeekString = copySourceWeekInput.value;
+    if (!sourceWeekString) {
+        alert("請先選擇要複製的「來源週」！");
+        return;
+    }
+
+    const sourceWeekStart = getWeekStartFromString(sourceWeekString);
+    if (!sourceWeekStart) {
+        alert("無法解析來源週，請重新選擇。");
+        return;
+    }
+
+    const sourceWeekEnd = new Date(sourceWeekStart);
+    sourceWeekEnd.setDate(sourceWeekStart.getDate() + 6);
+    sourceWeekEnd.setHours(23, 59, 59, 999);
+    
+    // 1. Target week is always the CURRENT view of the admin dashboard
+    const targetWeekStart = new Date(state.currentWeekStart);
+    targetWeekStart.setHours(0, 0, 0, 0);
+
+    const timeDiffMs = targetWeekStart.getTime() - sourceWeekStart.getTime();
+    const daysDiff = Math.round(timeDiffMs / (1000 * 3600 * 24)); // Days offset between source and target
+
+    if (daysDiff === 0) {
+        alert("來源週與目前所在的目標週相同，無法複製！");
+        return;
+    }
+
+    // 2. Filter events from selected source week
+    const sourceWeekEvents = state.allEvents.filter(e => {
+        const eventDate = new Date(e.date + 'T00:00');
+        return eventDate >= sourceWeekStart && eventDate <= sourceWeekEnd;
+    });
+
+    if (sourceWeekEvents.length === 0) {
+        alert("選擇的來源週沒有任何使用者的行程可以複製！");
+        return;
+    }
+
+    const weekLabel = sourceWeekString; // e.g., 2026-W11
+
+    // 3. Confirm with the admin
+    if (!window.confirm(`(管理員) 確定要將「來源週 ${weekLabel}」的 ${sourceWeekEvents.length} 個行程複製到「目前的週次」嗎？\n\n注意：複製的行程都將預設為「未完成」。`)) {
+        return;
+    }
+
+    setButtonLoading(copyLastWeekBtn, true);
+
+    try {
+        const copyPromises = sourceWeekEvents.map(event => {
+            // Calculate new date (+daysDiff) to place it in the target week
+            const oldDateObj = new Date(event.date + 'T00:00');
+            const newDateObj = new Date(oldDateObj);
+            newDateObj.setDate(oldDateObj.getDate() + daysDiff);
+            const newDateStr = formatDate(newDateObj);
+
+            // Create new event data based on old event
+            const newEventData = {
+                title: event.title || '未命名',
+                workspace: event.workspace || '',
+                date: newDateStr,
+                startTime: event.startTime || '00:00',
+                endTime: event.endTime || '01:00',
+                color: event.color || colorOptions[0],
+                completed: false, // Reset completed status
+                uid: event.uid || '', // Keep the same user ID (Note: Use uid instead of userId)
+                email: event.email || '',
+                chapter: event.chapter || '',
+                pages: event.pages || '',
+                notes: event.notes || ''
+            };
+
+            return addDoc(collection(db, "events"), newEventData);
+        });
+
+        await Promise.all(copyPromises);
+        alert(`成功將來源週 ${weekLabel} 的 ${sourceWeekEvents.length} 個行程複製到了目前所在的週次！`);
+    } catch (error) {
+         console.error("Error batch copying events:", error);
+         alert('複製過程中發生錯誤，請稍後再試。');
+    } finally {
+        setButtonLoading(copyLastWeekBtn, false, '確認複製');
+    }
+}
+
+function handleWorkspaceFilterChange(e) {
+    state.selectedWorkspace = e.target.value;
+    renderAdminDashboard();
+}
+
+function handlePrintWeeklySchedule() {
+    if (state.selectedWorkspace === ALL_WORKSPACES) {
+        alert('請先指定要列印的工作區。');
+        return;
+    }
+
+    const weekEvents = filterEventsForCurrentWeek(getVisibleAdminEvents(state.allEvents))
+        .sort((a, b) => new Date(`${a.date}T${a.startTime}`) - new Date(`${b.date}T${b.startTime}`));
+
+    if (weekEvents.length === 0) {
+        alert(`本週「${getSelectedWorkspaceLabel()}」沒有可列印的時間表。`);
+        return;
+    }
+
+    const { weekDays } = getCurrentWeekBounds();
+    const weekStart = weekDays[0];
+    const weekEnd = weekDays[6];
+    const dayFormatter = new Intl.DateTimeFormat('zh-TW', { weekday: 'short', month: 'numeric', day: 'numeric' });
+    const rangeFormatter = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' });
+
+    const printHtml = weekDays.map((day) => {
+        const dateKey = formatDate(day);
+        const dayEvents = weekEvents.filter((event) => event.date === dateKey);
+        const itemsHtml = dayEvents.length > 0
+            ? dayEvents.map((event) => {
+                const detailText = [event.chapter, event.pages, event.notes].filter(Boolean).join(' / ') || '-';
+                return `
+                    <tr>
+                        <td>${escapeHtml(event.startTime)} - ${escapeHtml(event.endTime)}</td>
+                        <td>${escapeHtml(event.title)}</td>
+                        <td>${escapeHtml(event.email || '-')}</td>
+                        <td>${escapeHtml(detailText)}</td>
+                    </tr>
+                `;
+            }).join('')
+            : '<tr><td colspan="4" class="empty-row">本日無排程</td></tr>';
+
+        return `
+            <section class="print-day">
+                <h2>${escapeHtml(dayFormatter.format(day))}</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>時間</th>
+                            <th>工作項目</th>
+                            <th>使用者</th>
+                            <th>備註</th>
+                        </tr>
+                    </thead>
+                    <tbody>${itemsHtml}</tbody>
+                </table>
+            </section>
+        `;
+    }).join('');
+
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=900');
+    if (!printWindow) {
+        alert('無法開啟列印視窗，請確認瀏覽器沒有封鎖彈出視窗。');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="zh-Hant">
+        <head>
+            <meta charset="UTF-8">
+            <title>${escapeHtml(getSelectedWorkspaceLabel())} 本週時間表</title>
+            <style>
+                body { font-family: "Microsoft JhengHei", sans-serif; margin: 32px; color: #0f172a; }
+                h1 { margin: 0 0 8px; font-size: 28px; }
+                .meta { margin-bottom: 24px; color: #475569; font-size: 14px; }
+                .print-day { margin-bottom: 24px; page-break-inside: avoid; }
+                h2 { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1; font-size: 18px; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; vertical-align: top; }
+                th { background: #e2e8f0; }
+                .empty-row { text-align: center; color: #64748b; }
+                @media print {
+                    body { margin: 16px; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${escapeHtml(getSelectedWorkspaceLabel())} 本週時間表</h1>
+            <div class="meta">週次：${escapeHtml(rangeFormatter.format(weekStart))} - ${escapeHtml(rangeFormatter.format(weekEnd))}</div>
+            ${printHtml}
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+        printWindow.print();
+    };
+}
+
 // --- EVENT HANDLERS ---
 function handleNavigateWeek(direction) {
     const newDate = new Date(state.currentWeekStart);
@@ -584,8 +889,7 @@ function handleNavigateWeek(direction) {
     state.currentWeekStart = newDate;
     sessionStorage.setItem('currentWeekStart', state.currentWeekStart.toISOString());
     renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-    // Reload admin data for the new week for the chart
-    loadAdminData();
+    renderAdminDashboard();
 }
 
 function handleGoToToday() {
@@ -593,7 +897,7 @@ function handleGoToToday() {
     state.currentWeekStart = today;
     sessionStorage.setItem('currentWeekStart', state.currentWeekStart.toISOString());
     renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-    loadAdminData();
+    renderAdminDashboard();
 }
 
 function showForm(isEditing = false) {
@@ -609,6 +913,7 @@ function hideForm() {
     state.editingEventId = null;
     addEventForm.querySelector('form').reset();
     eventTitleInput.value = '';
+    eventWorkspaceInput.value = '';
     eventNotesInput.value = '';
     eventChapterInput.value = '';
     eventPagesInput.value = '';
@@ -625,6 +930,30 @@ function handleColorPick(e) {
 }
 
 
+function setInitialSourceWeek() {
+    const today = new Date();
+    const prevWeek = new Date(today);
+    prevWeek.setDate(today.getDate() - 7);
+    
+    // Get ISO week string format like "2024-W12"
+    const prevWeekMonday = new Date(prevWeek);
+    const day = prevWeekMonday.getDay();
+    const diff = prevWeekMonday.getDate() - day + (day === 0 ? -6 : 1);
+    prevWeekMonday.setDate(diff);
+
+    // simple wrapper to get ISO week number (approximate enough for UI default)
+    const startDate = new Date(prevWeekMonday.getFullYear(), 0, 1);
+    const days = Math.floor((prevWeekMonday - startDate) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.ceil((prevWeekMonday.getDay() + 1 + days) / 7);
+
+    const yearString = prevWeekMonday.getFullYear();
+    const weekString = String(weekNumber).padStart(2, '0');
+    
+    if (copySourceWeekInput) {
+        copySourceWeekInput.value = `${yearString}-W${weekString}`;
+    }
+}
+
 // --- INITIALIZATION ---
 function init() {
     const savedWeekStart = sessionStorage.getItem('currentWeekStart');
@@ -634,6 +963,8 @@ function init() {
         const today = new Date();
         state.currentWeekStart = today;
     }
+
+    setInitialSourceWeek();
 
     loginForm.addEventListener('submit', handleLogin);
     logoutBtn.addEventListener('click', handleLogout);
@@ -650,6 +981,9 @@ function init() {
     adminEventsList.addEventListener('change', handleCheckboxChange);
     selectAllCheckbox.addEventListener('change', handleSelectAll);
     batchDeleteBtn.addEventListener('click', handleBatchDelete);
+    copyLastWeekBtn.addEventListener('click', handleCopyLastWeek);
+    workspaceFilterSelect.addEventListener('change', handleWorkspaceFilterChange);
+    printWeeklyScheduleBtn.addEventListener('click', handlePrintWeeklySchedule);
     
     setInterval(() => {
         if(state.isLoggedIn) {
