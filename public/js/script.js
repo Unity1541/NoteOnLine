@@ -28,11 +28,13 @@ let state = {
     isLoggedIn: false,
     currentUser: null,
     events: [],
+    allEvents: [],
     unsubscribeEvents: null,
     currentWeekStart: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()),
     editingEventId: null,
     selectedColor: colorOptions[0],
-    selectedEventIds: new Set()
+    selectedEventIds: new Set(),
+    selectedWorkspace: '__ALL__'
 };
 
 // --- DOM SELECTORS ---
@@ -49,6 +51,8 @@ const currentTimeDisplay = document.getElementById('current-time-display');
 const prevWeekBtn = document.getElementById('prev-week-btn');
 const todayBtn = document.getElementById('today-btn');
 const nextWeekBtn = document.getElementById('next-week-btn');
+const workspaceFilterSelect = document.getElementById('workspace-filter-select');
+const exportWeeklyPdfBtn = document.getElementById('export-weekly-pdf-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const calendarGrid = document.getElementById('calendar-grid');
 const showAddFormBtn = document.getElementById('show-add-form-btn');
@@ -94,6 +98,123 @@ const setButtonLoading = (button, isLoading, text) => {
     }
 };
 
+const ALL_WORKSPACES = '__ALL__';
+const UNASSIGNED_WORKSPACE = '__UNASSIGNED__';
+
+const normalizeWorkspace = (workspace) => (workspace || '').trim();
+
+const getWorkspaceKey = (workspace) => normalizeWorkspace(workspace) || UNASSIGNED_WORKSPACE;
+
+const getWorkspaceLabel = (workspace) => normalizeWorkspace(workspace) || '未指定工作區';
+
+const getSelectedWorkspaceLabel = () => {
+    if (state.selectedWorkspace === ALL_WORKSPACES) return '全部工作區';
+    return state.selectedWorkspace === UNASSIGNED_WORKSPACE ? '未指定工作區' : state.selectedWorkspace;
+};
+
+function escapeHtml(value = '') {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function sanitizeFileName(value) {
+    return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').replace(/\s+/g, ' ').trim();
+}
+
+function getWeekDays(startDate) {
+    const week = [];
+    const monday = new Date(startDate);
+    const dayOfWeek = monday.getDay();
+    const daysFromMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    monday.setDate(monday.getDate() + daysFromMonday);
+
+    for (let i = 0; i < 7; i++) {
+        const day = new Date(monday);
+        day.setDate(monday.getDate() + i);
+        week.push(day);
+    }
+
+    return week;
+}
+
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getCurrentWeekBounds() {
+    const weekDays = getWeekDays(state.currentWeekStart);
+    const firstDay = new Date(weekDays[0]);
+    firstDay.setHours(0, 0, 0, 0);
+
+    const lastDay = new Date(weekDays[6]);
+    lastDay.setHours(23, 59, 59, 999);
+
+    return { weekDays, firstDay, lastDay };
+}
+
+function filterEventsForCurrentWeek(events) {
+    const { firstDay, lastDay } = getCurrentWeekBounds();
+    return events.filter((event) => {
+        const eventDate = new Date(`${event.date}T00:00`);
+        return eventDate >= firstDay && eventDate <= lastDay;
+    });
+}
+
+function filterEventsBySelectedWorkspace(events) {
+    if (state.selectedWorkspace === ALL_WORKSPACES) {
+        return events;
+    }
+
+    return events.filter((event) => getWorkspaceKey(event.workspace) === state.selectedWorkspace);
+}
+
+function getVisibleUserEvents(events = state.allEvents) {
+    return filterEventsBySelectedWorkspace(events);
+}
+
+function populateWorkspaceFilterOptions(events) {
+    if (!workspaceFilterSelect) return;
+
+    const currentValue = state.selectedWorkspace;
+    const workspaceKeys = Array.from(new Set(events.map((event) => getWorkspaceKey(event.workspace)))).sort((a, b) => {
+        if (a === UNASSIGNED_WORKSPACE) return 1;
+        if (b === UNASSIGNED_WORKSPACE) return -1;
+        return a.localeCompare(b, 'zh-Hant');
+    });
+
+    workspaceFilterSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = ALL_WORKSPACES;
+    allOption.textContent = '全部工作區';
+    workspaceFilterSelect.appendChild(allOption);
+
+    workspaceKeys.forEach((key) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = getWorkspaceLabel(key === UNASSIGNED_WORKSPACE ? '' : key);
+        workspaceFilterSelect.appendChild(option);
+    });
+
+    const hasCurrentValue = currentValue === ALL_WORKSPACES || workspaceKeys.includes(currentValue);
+    state.selectedWorkspace = hasCurrentValue ? currentValue : ALL_WORKSPACES;
+    workspaceFilterSelect.value = state.selectedWorkspace;
+}
+
+function renderUserDashboard() {
+    state.events = getVisibleUserEvents(state.allEvents);
+    renderCalendarGrid(state, calendarGrid);
+    renderSidebar(state, sidebarDOMElements);
+    updateUserBatchControlsUI();
+}
+
 // --- MAIN RENDER LOGIC ---
 function renderAppUI() {
     if (state.isLoggedIn) {
@@ -120,7 +241,10 @@ onAuthStateChanged(auth, async (user) => {
         state.isLoggedIn = false;
         state.currentUser = null;
         state.events = [];
+        state.allEvents = [];
+        state.selectedWorkspace = ALL_WORKSPACES;
         if (state.unsubscribeEvents) state.unsubscribeEvents();
+        populateWorkspaceFilterOptions([]);
     }
     renderAppUI();
 });
@@ -151,14 +275,12 @@ function subscribeToEvents(uid) {
     if (state.unsubscribeEvents) state.unsubscribeEvents();
     const q = query(collection(db, "events"), where("uid", "==", uid));
     state.unsubscribeEvents = onSnapshot(q, (querySnapshot) => {
-        state.events = [];
+        state.allEvents = [];
         querySnapshot.forEach((doc) => {
-            state.events.push({ id: doc.id, ...doc.data() });
+            state.allEvents.push({ id: doc.id, ...doc.data() });
         });
-        // Re-render only the parts that depend on events
-        renderCalendarGrid(state, calendarGrid);
-        renderSidebar(state, sidebarDOMElements);
-        updateUserBatchControlsUI();
+        populateWorkspaceFilterOptions(state.allEvents);
+        renderUserDashboard();
     });
 }
 
@@ -247,8 +369,7 @@ function handleNavigateWeek(direction) {
     state.currentWeekStart = newDate;
     sessionStorage.setItem('currentWeekStart', state.currentWeekStart.toISOString());
     renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-    renderCalendarGrid(state, calendarGrid);
-    renderSidebar(state, sidebarDOMElements);
+    renderUserDashboard();
 }
 
 function handleGoToToday() {
@@ -256,8 +377,7 @@ function handleGoToToday() {
     state.currentWeekStart = today;
     sessionStorage.setItem('currentWeekStart', state.currentWeekStart.toISOString());
     renderHeader(state, userDisplayName, weekDisplay, currentTimeDisplay);
-    renderCalendarGrid(state, calendarGrid);
-    renderSidebar(state, sidebarDOMElements);
+    renderUserDashboard();
 }
 
 function showForm(isEditing = false) {
@@ -297,6 +417,124 @@ function handleColorPick(e) {
     }
 }
 
+function handleWorkspaceFilterChange(e) {
+    state.selectedWorkspace = e.target.value;
+    renderUserDashboard();
+}
+
+async function handleExportWeeklyPdf() {
+    if (state.selectedWorkspace === ALL_WORKSPACES) {
+        alert('請先指定要輸出的工作區。');
+        return;
+    }
+
+    if (!window.html2pdf) {
+        alert('PDF 匯出工具尚未載入完成，請稍後再試。');
+        return;
+    }
+
+    const weekEvents = filterEventsForCurrentWeek(getVisibleUserEvents(state.allEvents))
+        .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
+
+    if (weekEvents.length === 0) {
+        alert(`本週「${getSelectedWorkspaceLabel()}」沒有可輸出的時間表。`);
+        return;
+    }
+
+    const { weekDays } = getCurrentWeekBounds();
+    const weekStart = weekDays[0];
+    const weekEnd = weekDays[6];
+    const headerFormatter = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' });
+    const dayFormatter = new Intl.DateTimeFormat('zh-TW', { weekday: 'short', month: 'numeric', day: 'numeric' });
+    const fileName = sanitizeFileName(`${getSelectedWorkspaceLabel()}_${formatDate(weekStart)}_${formatDate(weekEnd)}_time-table.pdf`);
+
+    const exportContainer = document.createElement('div');
+    exportContainer.style.position = 'fixed';
+    exportContainer.style.left = '-99999px';
+    exportContainer.style.top = '0';
+    exportContainer.style.width = '794px';
+    exportContainer.style.background = '#ffffff';
+    exportContainer.style.padding = '32px';
+    exportContainer.style.color = '#0f172a';
+    exportContainer.style.fontFamily = '"Microsoft JhengHei", "PingFang TC", sans-serif';
+
+    const sectionsHtml = weekDays.map((day) => {
+        const dateKey = formatDate(day);
+        const dayEvents = weekEvents.filter((event) => event.date === dateKey);
+        const rowsHtml = dayEvents.length > 0
+            ? dayEvents.map((event) => {
+                const detailText = [event.chapter, event.pages, event.notes].filter(Boolean).join(' / ') || '-';
+                return `
+                    <tr>
+                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.startTime)} - ${escapeHtml(event.endTime)}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.title)}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(detailText)}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${event.completed ? '已完成' : '未完成'}</td>
+                    </tr>
+                `;
+            }).join('')
+            : `
+                <tr>
+                    <td colspan="4" style="border:1px solid #cbd5e1;padding:12px;text-align:center;color:#64748b;">本日無排程</td>
+                </tr>
+            `;
+
+        return `
+            <section style="margin-bottom:20px;page-break-inside:avoid;">
+                <h2 style="font-size:18px;margin:0 0 10px;padding-bottom:6px;border-bottom:2px solid #cbd5e1;">${escapeHtml(dayFormatter.format(day))}</h2>
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <thead>
+                        <tr style="background:#e2e8f0;">
+                            <th style="border:1px solid #cbd5e1;padding:8px 10px;text-align:left;">時間</th>
+                            <th style="border:1px solid #cbd5e1;padding:8px 10px;text-align:left;">工作項目</th>
+                            <th style="border:1px solid #cbd5e1;padding:8px 10px;text-align:left;">備註</th>
+                            <th style="border:1px solid #cbd5e1;padding:8px 10px;text-align:left;">狀態</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </section>
+        `;
+    }).join('');
+
+    exportContainer.innerHTML = `
+        <div style="margin-bottom:24px;">
+            <h1 style="font-size:28px;margin:0 0 8px;">${escapeHtml(getSelectedWorkspaceLabel())} 本週時間表</h1>
+            <div style="font-size:14px;color:#475569;">週次：${escapeHtml(headerFormatter.format(weekStart))} - ${escapeHtml(headerFormatter.format(weekEnd))}</div>
+            <div style="font-size:14px;color:#475569;margin-top:4px;">使用者：${escapeHtml(state.currentUser?.email || '')}</div>
+        </div>
+        ${sectionsHtml}
+    `;
+
+    document.body.appendChild(exportContainer);
+
+    exportWeeklyPdfBtn.disabled = true;
+    const originalButtonHtml = exportWeeklyPdfBtn.innerHTML;
+    exportWeeklyPdfBtn.innerHTML = `
+        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>輸出中...</span>
+    `;
+
+    try {
+        await window.html2pdf().set({
+            margin: [10, 10, 10, 10],
+            filename: fileName,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+        }).from(exportContainer).save();
+    } catch (error) {
+        console.error('Error exporting weekly PDF:', error);
+        alert('輸出 PDF 時發生錯誤，請稍後再試。');
+    } finally {
+        exportWeeklyPdfBtn.disabled = false;
+        exportWeeklyPdfBtn.innerHTML = originalButtonHtml;
+        document.body.removeChild(exportContainer);
+        lucide.createIcons();
+    }
+}
+
 function handleEventClick(e) {
     const eventElement = e.target.closest('.event-item');
     if (eventElement) {
@@ -328,6 +566,13 @@ async function handleChecklistClick(e) {
 // --- BATCH DELETE FUNCTIONS ---
 function updateUserBatchControlsUI() {
     const allCheckboxes = checklistContent.querySelectorAll('.checklist-checkbox');
+    const visibleIds = new Set(Array.from(allCheckboxes, (checkbox) => checkbox.dataset.eventId));
+    state.selectedEventIds.forEach((eventId) => {
+        if (!visibleIds.has(eventId)) {
+            state.selectedEventIds.delete(eventId);
+        }
+    });
+
     const checkedCount = state.selectedEventIds.size;
     
     userSelectedCountSpan.textContent = checkedCount;
@@ -446,6 +691,8 @@ function init() {
     prevWeekBtn.addEventListener('click', () => handleNavigateWeek(-1));
     nextWeekBtn.addEventListener('click', () => handleNavigateWeek(1));
     todayBtn.addEventListener('click', handleGoToToday);
+    workspaceFilterSelect.addEventListener('change', handleWorkspaceFilterChange);
+    exportWeeklyPdfBtn.addEventListener('click', handleExportWeeklyPdf);
     showAddFormBtn.addEventListener('click', handleShowAddForm);
     cancelEditBtn.addEventListener('click', hideForm);
     addEventForm.querySelector('form').addEventListener('submit', handleSaveEvent);
