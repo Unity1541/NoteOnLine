@@ -19,7 +19,7 @@ import {
     renderHeader,
     renderCalendarGrid,
     renderSidebar
-} from './planner-renderer.js';
+} from './planner-renderer-fixed.js';
 
 const colorOptions = ['#A7F3D0', '#BBF7D0', '#FED7AA', '#FBCFE8', '#DDD6FE', '#BFDBFE', '#F9A8D4', '#C084FC'];
 
@@ -121,6 +121,26 @@ function escapeHtml(value = '') {
         .replaceAll("'", '&#39;');
 }
 
+const getWorkspaceLabelText = (workspace) => normalizeWorkspace(workspace) || '未指定工作區';
+
+const getSelectedWorkspaceLabelText = () => {
+    if (state.selectedWorkspace === ALL_WORKSPACES) return '全部工作區';
+    return state.selectedWorkspace === UNASSIGNED_WORKSPACE ? '未指定工作區' : state.selectedWorkspace;
+};
+
+function normalizeWorkspaceFilterLabels() {
+    if (!workspaceFilterSelect) return;
+
+    Array.from(workspaceFilterSelect.options).forEach((option) => {
+        if (option.value === ALL_WORKSPACES) {
+            option.textContent = '全部工作區';
+            return;
+        }
+
+        option.textContent = getWorkspaceLabelText(option.value === UNASSIGNED_WORKSPACE ? '' : option.value);
+    });
+}
+
 function sanitizeFileName(value) {
     return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').replace(/\s+/g, ' ').trim();
 }
@@ -210,6 +230,7 @@ function populateWorkspaceFilterOptions(events) {
 
 function renderUserDashboard() {
     state.events = getVisibleUserEvents(state.allEvents);
+    normalizeWorkspaceFilterLabels();
     renderCalendarGrid(state, calendarGrid);
     renderSidebar(state, sidebarDOMElements);
     updateUserBatchControlsUI();
@@ -422,57 +443,52 @@ function handleWorkspaceFilterChange(e) {
     renderUserDashboard();
 }
 
-async function handleExportWeeklyPdf() {
-    if (state.selectedWorkspace === ALL_WORKSPACES) {
-        alert('請先指定要輸出的工作區。');
-        return;
-    }
+function buildPdfHost(contentHtml) {
+    const host = document.createElement('div');
+    host.style.position = 'fixed';
+    host.style.inset = '0';
+    host.style.zIndex = '9999';
+    host.style.overflow = 'auto';
+    host.style.background = '#f8fafc';
+    host.style.padding = '24px';
 
-    if (!window.html2pdf) {
-        alert('PDF 匯出工具尚未載入完成，請稍後再試。');
-        return;
-    }
+    const paper = document.createElement('div');
+    paper.style.width = '794px';
+    paper.style.margin = '0 auto';
+    paper.style.background = '#ffffff';
+    paper.style.color = '#0f172a';
+    paper.style.padding = '32px';
+    paper.style.boxSizing = 'border-box';
+    paper.style.fontFamily = '"Microsoft JhengHei", "PingFang TC", sans-serif';
+    paper.innerHTML = contentHtml;
 
-    const weekEvents = filterEventsForCurrentWeek(getVisibleUserEvents(state.allEvents))
-        .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
+    host.appendChild(paper);
+    document.body.appendChild(host);
+    return host;
+}
 
-    if (weekEvents.length === 0) {
-        alert(`本週「${getSelectedWorkspaceLabel()}」沒有可輸出的時間表。`);
-        return;
-    }
+function getEventDetailText(event) {
+    return [event.chapter, event.pages, event.notes].filter(Boolean).join(' / ') || '-';
+}
 
-    const { weekDays } = getCurrentWeekBounds();
+function buildWeeklyPdfHtml(weekDays, events, title) {
+    const dayFormatter = new Intl.DateTimeFormat('zh-TW', { weekday: 'short', month: 'numeric', day: 'numeric' });
     const weekStart = weekDays[0];
     const weekEnd = weekDays[6];
     const headerFormatter = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' });
-    const dayFormatter = new Intl.DateTimeFormat('zh-TW', { weekday: 'short', month: 'numeric', day: 'numeric' });
-    const fileName = sanitizeFileName(`${getSelectedWorkspaceLabel()}_${formatDate(weekStart)}_${formatDate(weekEnd)}_time-table.pdf`);
-
-    const exportContainer = document.createElement('div');
-    exportContainer.style.position = 'fixed';
-    exportContainer.style.left = '-99999px';
-    exportContainer.style.top = '0';
-    exportContainer.style.width = '794px';
-    exportContainer.style.background = '#ffffff';
-    exportContainer.style.padding = '32px';
-    exportContainer.style.color = '#0f172a';
-    exportContainer.style.fontFamily = '"Microsoft JhengHei", "PingFang TC", sans-serif';
 
     const sectionsHtml = weekDays.map((day) => {
         const dateKey = formatDate(day);
-        const dayEvents = weekEvents.filter((event) => event.date === dateKey);
+        const dayEvents = events.filter((event) => event.date === dateKey);
         const rowsHtml = dayEvents.length > 0
-            ? dayEvents.map((event) => {
-                const detailText = [event.chapter, event.pages, event.notes].filter(Boolean).join(' / ') || '-';
-                return `
-                    <tr>
-                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.startTime)} - ${escapeHtml(event.endTime)}</td>
-                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.title)}</td>
-                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(detailText)}</td>
-                        <td style="border:1px solid #cbd5e1;padding:8px 10px;">${event.completed ? '已完成' : '未完成'}</td>
-                    </tr>
-                `;
-            }).join('')
+            ? dayEvents.map((event) => `
+                <tr>
+                    <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.startTime)} - ${escapeHtml(event.endTime)}</td>
+                    <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(event.title)}</td>
+                    <td style="border:1px solid #cbd5e1;padding:8px 10px;">${escapeHtml(getEventDetailText(event))}</td>
+                    <td style="border:1px solid #cbd5e1;padding:8px 10px;">${event.completed ? '已完成' : '未完成'}</td>
+                </tr>
+            `).join('')
             : `
                 <tr>
                     <td colspan="4" style="border:1px solid #cbd5e1;padding:12px;text-align:center;color:#64748b;">本日無排程</td>
@@ -497,42 +513,132 @@ async function handleExportWeeklyPdf() {
         `;
     }).join('');
 
-    exportContainer.innerHTML = `
+    return `
         <div style="margin-bottom:24px;">
-            <h1 style="font-size:28px;margin:0 0 8px;">${escapeHtml(getSelectedWorkspaceLabel())} 本週時間表</h1>
+            <h1 style="font-size:28px;margin:0 0 8px;">${escapeHtml(title)}</h1>
             <div style="font-size:14px;color:#475569;">週次：${escapeHtml(headerFormatter.format(weekStart))} - ${escapeHtml(headerFormatter.format(weekEnd))}</div>
             <div style="font-size:14px;color:#475569;margin-top:4px;">使用者：${escapeHtml(state.currentUser?.email || '')}</div>
         </div>
         ${sectionsHtml}
     `;
+}
 
-    document.body.appendChild(exportContainer);
-
-    exportWeeklyPdfBtn.disabled = true;
-    const originalButtonHtml = exportWeeklyPdfBtn.innerHTML;
-    exportWeeklyPdfBtn.innerHTML = `
-        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        <span>輸出中...</span>
+function buildSingleEventPdfHtml(event) {
+    const dateFormatter = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'long' });
+    const eventDate = new Date(`${event.date}T00:00`);
+    return `
+        <div style="margin-bottom:28px;">
+            <h1 style="font-size:28px;margin:0 0 8px;">${escapeHtml(event.title)} 時刻表</h1>
+            <div style="font-size:14px;color:#475569;">使用者：${escapeHtml(state.currentUser?.email || '')}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <tbody>
+                <tr>
+                    <th style="width:140px;border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">工作區</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${escapeHtml(getWorkspaceLabelText(event.workspace))}</td>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">日期</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${escapeHtml(dateFormatter.format(eventDate))}</td>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">時間</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${escapeHtml(event.startTime)} - ${escapeHtml(event.endTime)}</td>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">章節 / 頁數</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${escapeHtml([event.chapter, event.pages].filter(Boolean).join(' / ') || '-')}</td>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">備註</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${escapeHtml(event.notes || '-')}</td>
+                </tr>
+                <tr>
+                    <th style="border:1px solid #cbd5e1;background:#e2e8f0;padding:10px;text-align:left;">狀態</th>
+                    <td style="border:1px solid #cbd5e1;padding:10px;">${event.completed ? '已完成' : '未完成'}</td>
+                </tr>
+            </tbody>
+        </table>
     `;
+}
+
+async function exportPdfDocument({ html, filename, button, loadingText }) {
+    if (!window.html2pdf) {
+        alert('PDF 匯出工具尚未載入完成，請稍後再試。');
+        return;
+    }
+
+    const exportHost = buildPdfHost(html);
+    await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 80)));
+
+    let originalButtonHtml = '';
+    if (button) {
+        button.disabled = true;
+        originalButtonHtml = button.innerHTML;
+        button.innerHTML = `
+            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            <span>${loadingText}</span>
+        `;
+    }
 
     try {
         await window.html2pdf().set({
             margin: [10, 10, 10, 10],
-            filename: fileName,
+            filename,
             image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 900 },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
             pagebreak: { mode: ['css', 'legacy'] }
-        }).from(exportContainer).save();
+        }).from(exportHost.firstElementChild).save();
     } catch (error) {
-        console.error('Error exporting weekly PDF:', error);
+        console.error('Error exporting PDF:', error);
         alert('輸出 PDF 時發生錯誤，請稍後再試。');
     } finally {
-        exportWeeklyPdfBtn.disabled = false;
-        exportWeeklyPdfBtn.innerHTML = originalButtonHtml;
-        document.body.removeChild(exportContainer);
-        lucide.createIcons();
+        exportHost.remove();
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalButtonHtml;
+            lucide.createIcons();
+        }
     }
+}
+
+async function handleExportWeeklyPdf() {
+    if (state.selectedWorkspace === ALL_WORKSPACES) {
+        alert('請先指定要輸出的工作區。');
+        return;
+    }
+
+    const { weekDays } = getCurrentWeekBounds();
+    const weekEvents = filterEventsForCurrentWeek(getVisibleUserEvents(state.allEvents))
+        .sort((a, b) => new Date(`${a.date}T${a.startTime}`).getTime() - new Date(`${b.date}T${b.startTime}`).getTime());
+
+    if (weekEvents.length === 0) {
+        alert(`本週「${getSelectedWorkspaceLabelText()}」沒有可輸出的時間表。`);
+        return;
+    }
+
+    const weekStart = weekDays[0];
+    const weekEnd = weekDays[6];
+    const title = `${getSelectedWorkspaceLabelText()} 本週時間表`;
+    const filename = sanitizeFileName(`${getSelectedWorkspaceLabelText()}_${formatDate(weekStart)}_${formatDate(weekEnd)}_time-table.pdf`);
+
+    await exportPdfDocument({
+        html: buildWeeklyPdfHtml(weekDays, weekEvents, title),
+        filename,
+        button: exportWeeklyPdfBtn,
+        loadingText: '輸出中...'
+    });
+}
+
+async function handleExportSingleEventPdf(event, button) {
+    const filename = sanitizeFileName(`${event.title}_${event.date}_${event.startTime.replace(':', '')}.pdf`);
+    await exportPdfDocument({
+        html: buildSingleEventPdfHtml(event),
+        filename,
+        button,
+        loadingText: '匯出中...'
+    });
 }
 
 function handleEventClick(e) {
@@ -554,6 +660,8 @@ async function handleChecklistClick(e) {
     if (e.target.closest('.toggle-complete-btn')) {
         const eventRef = doc(db, "events", eventId);
         await updateDoc(eventRef, { completed: !event.completed });
+    } else if (e.target.closest('.export-event-pdf-btn')) {
+        await handleExportSingleEventPdf(event, e.target.closest('.export-event-pdf-btn'));
     } else if (e.target.closest('.edit-event-btn')) {
         openEditForm(eventId);
     } else if (e.target.closest('.delete-event-btn')) {

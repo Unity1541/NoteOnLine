@@ -21,7 +21,7 @@ import {
     renderHeader,
     renderCalendarGrid,
     renderSidebar
-} from './planner-renderer.js';
+} from './planner-renderer-fixed.js';
 
 // --- 管理者帳號設定 ---
 const ADMIN_CONFIG = {
