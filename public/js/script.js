@@ -34,7 +34,8 @@ let state = {
     editingEventId: null,
     selectedColor: colorOptions[0],
     selectedEventIds: new Set(),
-    selectedWorkspace: '__ALL__'
+    selectedWorkspace: '__ALL__',
+    allowUnscheduled: true
 };
 
 // --- DOM SELECTORS ---
@@ -69,18 +70,44 @@ const eventEndHourInput = document.getElementById('event-end-hour-input');
 const eventEndMinuteInput = document.getElementById('event-end-minute-input');
 const eventNotesInput = document.getElementById('event-notes-input');
 const eventColorPicker = document.getElementById('event-color-picker');
+const eventDurationInput = document.getElementById('event-duration-input');
+const eventDurationRow = document.getElementById('event-duration-row');
+const eventTimeRow = document.getElementById('event-time-row');
 const saveEventBtn = document.getElementById('save-event-btn');
 const cancelEditBtn = document.getElementById('cancel-edit-btn');
 const formStatus = document.getElementById('form-status');
 const summaryContent = document.getElementById('summary-content');
 const checklistContent = document.getElementById('checklist-content');
+const taskPoolContainer = document.getElementById('task-pool-container');
+const taskPoolContent = document.getElementById('task-pool-content');
+const taskPoolCount = document.getElementById('task-pool-count');
 const userBatchControls = document.getElementById('user-batch-controls');
 const userSelectAllCheckbox = document.getElementById('user-select-all-checkbox');
 const userBatchDeleteBtn = document.getElementById('user-batch-delete-btn');
 const userSelectedCountSpan = document.getElementById('user-selected-count');
 
 // Sidebar DOM elements for the renderer
-const sidebarDOMElements = { summaryContent, checklistContent, eventDateSelect, eventColorPicker };
+const sidebarDOMElements = { summaryContent, checklistContent, eventDateSelect, eventColorPicker, taskPoolContent, taskPoolCount };
+
+// --- DRAG & DROP CONSTANTS ---
+const CALENDAR_START_HOUR = 6;
+const CALENDAR_START_MIN = CALENDAR_START_HOUR * 60; // 360
+const CALENDAR_END_MIN = CALENDAR_START_MIN + 1020;  // 1380 (23:00)
+const SNAP_MINUTES = 30;
+let currentDrag = null; // { id, kind: 'pool'|'scheduled', duration, grabOffsetMin }
+
+const minutesToTime = (mins) => {
+    const m = Math.max(0, Math.min(24 * 60 - 1, mins));
+    return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
+
+const timeToMinutes = (time) => {
+    if (!time) return 0;
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+};
+
+const snap = (min) => Math.round(min / SNAP_MINUTES) * SNAP_MINUTES;
 
 
 // --- UTILITY FUNCTIONS ---
@@ -307,24 +334,47 @@ function subscribeToEvents(uid) {
 
 async function handleSaveEvent(e) {
     e.preventDefault();
+    const isPool = eventDateSelect.value === '__POOL__';
+
+    if (!eventTitleInput.value) {
+        formStatus.textContent = '請填寫工作項目！';
+        formStatus.className = 'text-red-500 text-sm text-center h-5';
+        return;
+    }
+    if (!eventDateSelect.value) {
+        formStatus.textContent = '請選擇日期！';
+        formStatus.className = 'text-red-500 text-sm text-center h-5';
+        return;
+    }
+    if (!isPool && (!eventStartHourInput.value || !eventStartMinuteInput.value || !eventEndHourInput.value || !eventEndMinuteInput.value)) {
+        formStatus.textContent = '請填寫開始與結束時間！';
+        formStatus.className = 'text-red-500 text-sm text-center h-5';
+        return;
+    }
+
     const eventData = {
         title: eventTitleInput.value,
         workspace: eventWorkspaceInput.value.trim(),
         chapter: eventChapterInput.value,
         pages: eventPagesInput.value,
-        date: eventDateSelect.value,
-        startTime: `${eventStartHourInput.value}:${eventStartMinuteInput.value}`,
-        endTime: `${eventEndHourInput.value}:${eventEndMinuteInput.value}`,
         notes: eventNotesInput.value,
         color: state.selectedColor,
         uid: state.currentUser.uid,
         email: state.currentUser.email,
     };
 
-    if (!eventData.title || !eventData.date || !eventStartHourInput.value || !eventStartMinuteInput.value || !eventEndHourInput.value || !eventEndMinuteInput.value) {
-        formStatus.textContent = '請填寫所有必填欄位！';
-        formStatus.className = 'text-red-500 text-sm text-center h-5';
-        return;
+    if (isPool) {
+        eventData.unscheduled = true;
+        eventData.date = '';
+        eventData.startTime = '';
+        eventData.endTime = '';
+        eventData.duration = Number(eventDurationInput.value) || 60;
+    } else {
+        eventData.unscheduled = false;
+        eventData.date = eventDateSelect.value;
+        eventData.startTime = `${eventStartHourInput.value}:${eventStartMinuteInput.value}`;
+        eventData.endTime = `${eventEndHourInput.value}:${eventEndMinuteInput.value}`;
+        eventData.duration = Math.max(SNAP_MINUTES, timeToMinutes(eventData.endTime) - timeToMinutes(eventData.startTime));
     }
 
     setButtonLoading(saveEventBtn, true);
@@ -336,6 +386,7 @@ async function handleSaveEvent(e) {
             await updateDoc(eventRef, eventData);
         } else {
             eventData.completed = false;
+            eventData.createdAt = Date.now();
             await addDoc(collection(db, "events"), eventData);
         }
         hideForm();
@@ -348,8 +399,27 @@ async function handleSaveEvent(e) {
     }
 }
 
+function updateFormModeForDate() {
+    const isPool = eventDateSelect.value === '__POOL__';
+    if (isPool) {
+        eventTimeRow.classList.add('hidden');
+        eventDurationRow.classList.remove('hidden');
+        eventStartHourInput.required = false;
+        eventStartMinuteInput.required = false;
+        eventEndHourInput.required = false;
+        eventEndMinuteInput.required = false;
+    } else {
+        eventTimeRow.classList.remove('hidden');
+        eventDurationRow.classList.add('hidden');
+        eventStartHourInput.required = true;
+        eventStartMinuteInput.required = true;
+        eventEndHourInput.required = true;
+        eventEndMinuteInput.required = true;
+    }
+}
+
 function openEditForm(eventId) {
-    const eventToEdit = state.events.find(e => e.id === eventId);
+    const eventToEdit = state.events.find(e => e.id === eventId) || state.allEvents.find(e => e.id === eventId);
     if (eventToEdit) {
         state.editingEventId = eventId;
         showForm(true);
@@ -357,21 +427,27 @@ function openEditForm(eventId) {
         eventWorkspaceInput.value = eventToEdit.workspace || '';
         eventChapterInput.value = eventToEdit.chapter || '';
         eventPagesInput.value = eventToEdit.pages || '';
-        eventDateSelect.value = eventToEdit.date;
-        if (eventToEdit.startTime) {
-            const [startHour, startMinute] = eventToEdit.startTime.split(':');
-            eventStartHourInput.value = startHour;
-            eventStartMinuteInput.value = startMinute;
+        if (eventToEdit.unscheduled) {
+            eventDateSelect.value = '__POOL__';
+            eventDurationInput.value = String(eventToEdit.duration || 60);
+        } else {
+            eventDateSelect.value = eventToEdit.date;
+            if (eventToEdit.startTime) {
+                const [startHour, startMinute] = eventToEdit.startTime.split(':');
+                eventStartHourInput.value = startHour;
+                eventStartMinuteInput.value = startMinute;
+            }
+            if (eventToEdit.endTime) {
+                const [endHour, endMinute] = eventToEdit.endTime.split(':');
+                eventEndHourInput.value = endHour;
+                eventEndMinuteInput.value = endMinute;
+            }
         }
-        if (eventToEdit.endTime) {
-            const [endHour, endMinute] = eventToEdit.endTime.split(':');
-            eventEndHourInput.value = endHour;
-            eventEndMinuteInput.value = endMinute;
-        }
-        eventNotesInput.value = eventToEdit.notes;
+        eventNotesInput.value = eventToEdit.notes || '';
         state.selectedColor = eventToEdit.color;
         // Re-render the sidebar to update form and color picker
         renderSidebar(state, sidebarDOMElements);
+        updateFormModeForDate();
     }
 }
 
@@ -419,9 +495,11 @@ function hideForm() {
     eventNotesInput.value = '';
     eventChapterInput.value = '';
     eventPagesInput.value = '';
+    if (eventDurationInput) eventDurationInput.value = '60';
     state.selectedColor = colorOptions[0];
     // Re-render sidebar to reset form state visually
     renderSidebar(state, sidebarDOMElements);
+    updateFormModeForDate();
 }
 
 function handleShowAddForm() {
@@ -642,10 +720,199 @@ async function handleExportSingleEventPdf(event, button) {
 }
 
 function handleEventClick(e) {
+    if (e.target.closest('.event-item.dragging-just-ended')) return;
     const eventElement = e.target.closest('.event-item');
     if (eventElement) {
         const eventId = eventElement.dataset.eventId;
         openEditForm(eventId);
+    }
+}
+
+// --- DRAG & DROP HANDLERS ---
+function handleDragStart(e) {
+    if (e.target.closest('button')) {
+        e.preventDefault();
+        return;
+    }
+    const draggable = e.target.closest('[draggable="true"][data-event-id]');
+    if (!draggable) return;
+
+    const id = draggable.dataset.eventId;
+    const kind = draggable.dataset.eventKind || 'scheduled';
+    const evt = state.events.find((x) => x.id === id) || state.allEvents.find((x) => x.id === id);
+    if (!evt) return;
+
+    let duration = evt.duration;
+    if (!duration) {
+        if (evt.startTime && evt.endTime) {
+            duration = Math.max(SNAP_MINUTES, timeToMinutes(evt.endTime) - timeToMinutes(evt.startTime));
+        } else {
+            duration = 60;
+        }
+    }
+
+    let grabOffsetMin = 0;
+    if (kind === 'scheduled') {
+        const rect = draggable.getBoundingClientRect();
+        grabOffsetMin = e.clientY - rect.top; // 1px = 1min
+    }
+
+    currentDrag = { id, kind, duration, grabOffsetMin };
+
+    try {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+    } catch (_) {}
+
+    setTimeout(() => {
+        draggable.classList.add('opacity-40', 'pointer-events-none');
+    }, 0);
+}
+
+function handleDragEnd(e) {
+    const draggable = e.target.closest('[draggable="true"][data-event-id]');
+    if (draggable) {
+        draggable.classList.remove('opacity-40', 'pointer-events-none');
+        draggable.classList.add('dragging-just-ended');
+        setTimeout(() => draggable.classList.remove('dragging-just-ended'), 50);
+    }
+    clearDropIndicators();
+    currentDrag = null;
+}
+
+function clearDropIndicators() {
+    document.querySelectorAll('.day-events-container').forEach((el) => {
+        el.classList.remove('ring-2', 'ring-indigo-400', 'bg-indigo-50/40');
+        const ind = el.querySelector('.drop-indicator');
+        if (ind) ind.remove();
+    });
+    if (taskPoolContainer) {
+        taskPoolContainer.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-50/40');
+    }
+}
+
+function computeDropMinutes(container, clientY) {
+    if (!currentDrag) return CALENDAR_START_MIN;
+    const rect = container.getBoundingClientRect();
+    const offsetY = clientY - rect.top - currentDrag.grabOffsetMin;
+    const rawStart = CALENDAR_START_MIN + offsetY;
+    const snapped = snap(rawStart);
+    const maxStart = CALENDAR_END_MIN - currentDrag.duration;
+    return Math.max(CALENDAR_START_MIN, Math.min(maxStart, snapped));
+}
+
+function handleCalendarDragOver(e) {
+    const container = e.target.closest('.day-events-container');
+    if (!container || !currentDrag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    container.classList.add('ring-2', 'ring-indigo-400', 'bg-indigo-50/40');
+
+    let indicator = container.querySelector('.drop-indicator');
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.className = 'drop-indicator absolute left-1 right-1 rounded-lg border-2 border-dashed border-indigo-500 bg-indigo-200/40 pointer-events-none z-30';
+        container.appendChild(indicator);
+    }
+    const startMin = computeDropMinutes(container, e.clientY);
+    const top = startMin - CALENDAR_START_MIN;
+    indicator.style.top = `${top}px`;
+    indicator.style.height = `${currentDrag.duration}px`;
+    indicator.textContent = `${minutesToTime(startMin)} - ${minutesToTime(startMin + currentDrag.duration)}`;
+    indicator.style.cssText += ';display:flex;align-items:center;justify-content:center;font-size:11px;color:#4338ca;font-weight:600;';
+}
+
+function handleCalendarDragLeave(e) {
+    const container = e.target.closest('.day-events-container');
+    if (!container) return;
+    if (container.contains(e.relatedTarget)) return;
+    container.classList.remove('ring-2', 'ring-indigo-400', 'bg-indigo-50/40');
+    const ind = container.querySelector('.drop-indicator');
+    if (ind) ind.remove();
+}
+
+async function handleCalendarDrop(e) {
+    const container = e.target.closest('.day-events-container');
+    if (!container || !currentDrag) return;
+    e.preventDefault();
+
+    const newDate = container.dataset.date;
+    const startMin = computeDropMinutes(container, e.clientY);
+    const endMin = Math.min(CALENDAR_END_MIN, startMin + currentDrag.duration);
+
+    const update = {
+        unscheduled: false,
+        date: newDate,
+        startTime: minutesToTime(startMin),
+        endTime: minutesToTime(endMin),
+        duration: endMin - startMin,
+    };
+
+    clearDropIndicators();
+    const idToUpdate = currentDrag.id;
+    currentDrag = null;
+
+    try {
+        await updateDoc(doc(db, 'events', idToUpdate), update);
+    } catch (err) {
+        console.error('Error rescheduling event:', err);
+        alert('排程失敗，請稍後再試。');
+    }
+}
+
+function handlePoolDragOver(e) {
+    if (!currentDrag || currentDrag.kind !== 'scheduled') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (taskPoolContainer) {
+        taskPoolContainer.classList.add('ring-2', 'ring-amber-400', 'bg-amber-50/40');
+    }
+}
+
+function handlePoolDragLeave(e) {
+    if (!taskPoolContainer) return;
+    if (taskPoolContainer.contains(e.relatedTarget)) return;
+    taskPoolContainer.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-50/40');
+}
+
+async function handlePoolDrop(e) {
+    if (!currentDrag || currentDrag.kind !== 'scheduled') return;
+    e.preventDefault();
+
+    const update = {
+        unscheduled: true,
+        date: '',
+        startTime: '',
+        endTime: '',
+        duration: currentDrag.duration,
+    };
+
+    clearDropIndicators();
+    const idToUpdate = currentDrag.id;
+    currentDrag = null;
+
+    try {
+        await updateDoc(doc(db, 'events', idToUpdate), update);
+    } catch (err) {
+        console.error('Error moving event to pool:', err);
+        alert('移至任務池失敗，請稍後再試。');
+    }
+}
+
+async function handlePoolClick(e) {
+    const card = e.target.closest('.pool-task-item');
+    if (!card) return;
+    const eventId = card.dataset.eventId;
+    const event = state.events.find((x) => x.id === eventId) || state.allEvents.find((x) => x.id === eventId);
+    if (!event) return;
+
+    if (e.target.closest('.pool-edit-btn')) {
+        openEditForm(eventId);
+    } else if (e.target.closest('.pool-delete-btn')) {
+        if (window.confirm(`確定要刪除任務 "${event.title}" 嗎？`)) {
+            await handleDeleteEvent(eventId);
+        }
     }
 }
 
@@ -805,11 +1072,27 @@ function init() {
     cancelEditBtn.addEventListener('click', hideForm);
     addEventForm.querySelector('form').addEventListener('submit', handleSaveEvent);
     eventColorPicker.addEventListener('click', handleColorPick);
+    eventDateSelect.addEventListener('change', updateFormModeForDate);
     calendarGrid.addEventListener('click', handleEventClick);
     checklistContent.addEventListener('click', handleChecklistClick);
     checklistContent.addEventListener('change', handleUserCheckboxChange);
     userSelectAllCheckbox.addEventListener('change', handleUserSelectAll);
     userBatchDeleteBtn.addEventListener('click', handleUserBatchDelete);
+
+    // Drag & drop wiring (delegated)
+    document.addEventListener('dragstart', handleDragStart);
+    document.addEventListener('dragend', handleDragEnd);
+    calendarGrid.addEventListener('dragover', handleCalendarDragOver);
+    calendarGrid.addEventListener('dragleave', handleCalendarDragLeave);
+    calendarGrid.addEventListener('drop', handleCalendarDrop);
+    if (taskPoolContainer) {
+        taskPoolContainer.addEventListener('dragover', handlePoolDragOver);
+        taskPoolContainer.addEventListener('dragleave', handlePoolDragLeave);
+        taskPoolContainer.addEventListener('drop', handlePoolDrop);
+    }
+    if (taskPoolContent) {
+        taskPoolContent.addEventListener('click', handlePoolClick);
+    }
     
     setInterval(() => {
         if(state.isLoggedIn) {

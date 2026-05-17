@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>貓頭鷹國考記事本</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="public/css/style.css">
+  <link rel="stylesheet" href="/css/style.css">
 <link rel="stylesheet" href="/index.css">
 </head>
 <body>
@@ -170,8 +170,19 @@
                   <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">日期</label>
                     <select id="event-date-select" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent" required></select>
+                    <p class="text-xs text-slate-500 mt-1">選「暫不排程」會放進下方任務池，之後再拖到行事曆。</p>
                   </div>
-                  <div class="grid grid-cols-2 gap-3">
+                  <div id="event-duration-row" class="hidden">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">預估時長 (分鐘)</label>
+                    <select id="event-duration-input" class="w-full p-3 border border-slate-200 bg-white/50 rounded-xl focus:ring-2 focus:ring-blue-400 focus:border-transparent">
+                      <option value="30">30 分鐘</option>
+                      <option value="60" selected>1 小時</option>
+                      <option value="90">1.5 小時</option>
+                      <option value="120">2 小時</option>
+                      <option value="180">3 小時</option>
+                    </select>
+                  </div>
+                  <div id="event-time-row" class="grid grid-cols-2 gap-3">
                     <div>
                       <label class="block text-sm font-medium text-slate-700 mb-1">開始時間</label>
                       <div class="flex gap-2">
@@ -226,6 +237,20 @@
               <div id="summary-content" class="space-y-3 relative z-10"></div>
             </div>
 
+            <div id="task-pool-container" class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6 relative overflow-hidden">
+              <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-amber-300/10 to-pink-300/10 rounded-full blur-2xl"></div>
+              <div class="flex items-center justify-between mb-4 relative z-10">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="inbox" class="w-5 h-5 text-amber-600"></i>
+                  <h3 class="text-lg font-bold bg-gradient-to-r from-amber-600 to-pink-600 bg-clip-text text-transparent">任務池</h3>
+                  <span class="text-xs bg-gradient-to-r from-amber-100 to-pink-100 text-amber-700 px-3 py-1 rounded-full font-medium shadow-sm">拖到行事曆排程</span>
+                </div>
+                <span id="task-pool-count" class="text-xs text-slate-500 font-medium">0 項</span>
+              </div>
+              <div id="task-pool-content" class="space-y-2 max-h-72 overflow-y-auto relative z-10"></div>
+              <p class="text-[11px] text-slate-400 mt-3 relative z-10 leading-relaxed">提示：把行事曆上的事件拖回這裡可取消排程。</p>
+            </div>
+
             <div class="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/30 p-6 relative overflow-hidden">
               <div class="absolute -top-10 -left-10 w-32 h-32 bg-gradient-to-br from-green-400/10 to-blue-400/10 rounded-full blur-2xl"></div>
               <div class="flex items-center justify-between mb-4 relative z-10">
@@ -258,9 +283,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   
   <!-- Firebase SDK -->
-  <script type="module" src="public/js/firebase.js"></script>
-  <script type="module" src="public/js/planner-renderer-fixed.js"></script>
-  <script type="module" src="public/js/script.js"></script>
+  <script type="module" src="/js/firebase.js"></script>
+  <script type="module" src="/js/planner-renderer-fixed.js"></script>
+  <script type="module" src="/js/script.js"></script>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>

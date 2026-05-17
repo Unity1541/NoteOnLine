@@ -82,13 +82,13 @@ export function renderCalendarGrid(state, calendarGrid) {
             dayHTML += `<div class="absolute w-full border-t ${lineClass}" style="top: ${min}px"></div>`;
         }
 
-        const dayEvents = state.events.filter((event) => event.date === formatDate(day));
+        const dayEvents = state.events.filter((event) => !event.unscheduled && event.date === formatDate(day));
         dayEvents.forEach((event) => {
             const startMinutes = timeToMinutes(event.startTime);
             const endMinutes = timeToMinutes(event.endTime);
             const top = startMinutes - 360;
             const height = endMinutes - startMinutes;
-            const eventStyle = `top: ${Math.max(0, top)}px; height: ${Math.max(12, height)}px; background-color: ${event.color}; border-left-color: ${event.completed ? '#10b981' : '#6366f1'}`;
+            const eventStyle = `top: ${Math.max(0, top)}px; height: ${Math.max(20, height)}px; background-color: ${event.color}; border-left-color: ${event.completed ? '#10b981' : '#6366f1'}`;
 
             const tooltipParts = [event.title];
             if (event.workspace) tooltipParts.push(`工作區: ${event.workspace}`);
@@ -98,14 +98,14 @@ export function renderCalendarGrid(state, calendarGrid) {
             const tooltipText = tooltipParts.join('\n');
 
             dayHTML += `
-                <div class="event-item absolute left-1 right-1 rounded-lg border-l-4 shadow-md group cursor-pointer transition-all duration-200 hover:shadow-lg hover:z-10 transform hover:scale-105 ${event.completed ? 'opacity-70' : ''}" style="${eventStyle}" data-event-id="${event.id}" title="${tooltipText}">
-                    <div class="p-1.5 h-full flex flex-col justify-center relative overflow-hidden">
-                        <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <div class="event-item absolute left-1 right-1 rounded-lg border-l-4 shadow-md group transition-shadow duration-200 hover:shadow-lg hover:z-10 ${event.completed ? 'opacity-70' : ''}" style="${eventStyle}" data-event-id="${event.id}" data-event-kind="scheduled" draggable="true" title="${tooltipText}">
+                    <div class="event-body p-1.5 h-full flex flex-col justify-center relative overflow-hidden cursor-grab active:cursor-grabbing">
+                        <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                         <div class="font-semibold text-slate-800 text-sm leading-tight relative z-10 truncate ${event.completed ? 'line-through text-slate-600' : ''}">${event.title}</div>
                         ${event.workspace ? `<div class="text-xs text-slate-700 font-medium relative z-10 truncate">${event.workspace}</div>` : ''}
                         ${event.chapter ? `<div class="text-xs text-slate-700 font-medium relative z-10 truncate">${event.chapter}</div>` : ''}
                         ${event.pages ? `<div class="text-xs text-slate-700 font-medium relative z-10">${event.pages}</div>` : ''}
-                        <div class="text-xs text-slate-700 font-medium relative z-10 mt-0.5">${event.startTime}</div>
+                        <div class="text-xs text-slate-700 font-medium relative z-10 mt-0.5">${event.startTime}-${event.endTime}</div>
                         ${event.notes ? `<div class="text-xs text-slate-600 opacity-90 truncate mt-0.5 relative z-10">備註 ${event.notes}</div>` : ''}
                     </div>
                 </div>
@@ -118,17 +118,79 @@ export function renderCalendarGrid(state, calendarGrid) {
     });
 }
 
-export function renderSidebar(state, { summaryContent, checklistContent, eventDateSelect, eventColorPicker }) {
+export function renderSidebar(state, { summaryContent, checklistContent, eventDateSelect, eventColorPicker, taskPoolContent, taskPoolCount }) {
     if (summaryContent) renderSummary(state, summaryContent);
     if (checklistContent) renderChecklist(state, checklistContent);
+    if (taskPoolContent) renderTaskPool(state, taskPoolContent, taskPoolCount);
     renderAddEventForm(state, eventDateSelect, eventColorPicker);
     lucide.createIcons();
+}
+
+function renderTaskPool(state, taskPoolContent, taskPoolCount) {
+    const poolEvents = state.events
+        .filter((event) => event.unscheduled)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+    if (taskPoolCount) {
+        taskPoolCount.textContent = `${poolEvents.length} 項`;
+    }
+
+    taskPoolContent.innerHTML = '';
+
+    if (poolEvents.length === 0) {
+        taskPoolContent.innerHTML = `
+            <div class="text-center py-6 text-slate-400">
+                <i data-lucide="package-open" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+                <p class="text-sm font-medium">沒有待排程任務</p>
+                <p class="text-xs mt-1">新增行程時選「暫不排程」即可加入</p>
+            </div>
+        `;
+        return;
+    }
+
+    poolEvents.forEach((event) => {
+        const duration = event.duration || 60;
+        const card = document.createElement('div');
+        card.className = 'pool-task-item flex items-start gap-3 p-3 rounded-2xl border border-white/40 bg-white/60 backdrop-blur-sm shadow-md hover:shadow-lg transition-all duration-200 cursor-grab active:cursor-grabbing';
+        card.draggable = true;
+        card.dataset.eventId = event.id;
+        card.dataset.eventKind = 'pool';
+        card.style.borderLeft = `6px solid ${event.color}`;
+
+        const metaParts = [];
+        if (event.workspace) metaParts.push(`<span><i data-lucide="map-pinned" class="inline w-3 h-3 mr-1"></i>${event.workspace}</span>`);
+        if (event.chapter) metaParts.push(`<span><i data-lucide="book" class="inline w-3 h-3 mr-1"></i>${event.chapter}</span>`);
+        if (event.pages) metaParts.push(`<span><i data-lucide="file-text" class="inline w-3 h-3 mr-1"></i>${event.pages}</span>`);
+
+        card.innerHTML = `
+            <div class="flex-shrink-0 mt-1 text-slate-400" title="拖曳到行事曆排程">
+                <i data-lucide="grip-vertical" class="w-4 h-4"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm leading-tight text-slate-800 truncate">${event.title}</div>
+                ${metaParts.length ? `<div class="text-xs text-slate-600 font-medium mt-1 flex items-center gap-2 flex-wrap">${metaParts.join('')}</div>` : ''}
+                <div class="text-xs text-slate-500 mt-1">預估 ${duration} 分鐘</div>
+                ${event.notes ? `<div class="text-xs text-slate-500 truncate mt-1">備註 ${event.notes}</div>` : ''}
+            </div>
+            <div class="flex items-center gap-1 flex-shrink-0">
+                <button class="pool-edit-btn text-slate-400 hover:text-indigo-500 transition-colors duration-200 p-1.5 rounded-full hover:bg-white/50" title="編輯任務" type="button">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                </button>
+                <button class="pool-delete-btn text-slate-400 hover:text-red-500 transition-colors duration-200 p-1.5 rounded-full hover:bg-white/50" title="刪除任務" type="button">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </div>
+        `;
+
+        taskPoolContent.appendChild(card);
+    });
 }
 
 function renderAddEventForm(state, eventDateSelect, eventColorPicker) {
     const weekDays = getWeekDays(state.currentWeekStart);
     const currentSelection = eventDateSelect.value;
-    eventDateSelect.innerHTML = '<option value="">選擇日期</option>';
+    const poolOption = state.allowUnscheduled ? '<option value="__POOL__">📥 暫不排程 (放入任務池)</option>' : '';
+    eventDateSelect.innerHTML = `<option value="">選擇日期</option>${poolOption}`;
 
     weekDays.forEach((day, index) => {
         const option = document.createElement('option');
@@ -159,6 +221,7 @@ function renderSummary(state, summaryContent) {
     lastDay.setHours(23, 59, 59, 999);
 
     const weekEvents = state.events.filter((event) => {
+        if (event.unscheduled || !event.date) return false;
         const eventDate = new Date(`${event.date}T00:00`);
         return eventDate >= firstDay && eventDate <= lastDay;
     });
@@ -186,7 +249,7 @@ function renderSummary(state, summaryContent) {
     `;
 
     weekDays.forEach((day, index) => {
-        const dayEvents = state.events.filter((event) => event.date === formatDate(day));
+        const dayEvents = state.events.filter((event) => !event.unscheduled && event.date === formatDate(day));
         if (dayEvents.length > 0) {
             summaryHTML += `
                 <div class="flex justify-between text-sm bg-white/40 rounded-xl p-2 backdrop-blur-sm">
@@ -210,6 +273,7 @@ function renderChecklist(state, checklistContent) {
 
     const weekEvents = state.events
         .filter((event) => {
+            if (event.unscheduled || !event.date) return false;
             const eventDate = new Date(`${event.date}T00:00`);
             return eventDate >= firstDay && eventDate <= lastDay;
         })
