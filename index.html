@@ -117,6 +117,11 @@
                   <option value="__ALL__">全部工作區</option>
                 </select>
               </div>
+              <button id="copy-last-week-btn" class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl transition-all duration-200 text-sm font-medium shadow-md hover:shadow-lg transform hover:scale-105" title="把上週已排程事件依星期幾複製到本週（衝突時段會略過）">
+                <i data-lucide="copy-plus" class="w-4 h-4"></i>
+                <span class="btn-text">複製上週</span>
+                <div class="spinner hidden w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              </button>
               <button id="export-weekly-pdf-btn" class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black text-white rounded-xl transition-all duration-200 text-sm font-medium shadow-md hover:shadow-lg transform hover:scale-105">
                 <i data-lucide="file-down" class="w-4 h-4"></i>
                 <span>輸出本週 PDF</span>

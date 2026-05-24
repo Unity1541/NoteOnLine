@@ -54,6 +54,7 @@ const todayBtn = document.getElementById('today-btn');
 const nextWeekBtn = document.getElementById('next-week-btn');
 const workspaceFilterSelect = document.getElementById('workspace-filter-select');
 const exportWeeklyPdfBtn = document.getElementById('export-weekly-pdf-btn');
+const copyLastWeekBtn = document.getElementById('copy-last-week-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const calendarGrid = document.getElementById('calendar-grid');
 const showAddFormBtn = document.getElementById('show-add-form-btn');
@@ -681,6 +682,105 @@ async function exportPdfDocument({ html, filename, button, loadingText }) {
     }
 }
 
+async function handleCopyLastWeek() {
+    if (!state.currentUser) return;
+
+    const { firstDay: currentWeekFirstDay, lastDay: currentWeekLastDay } = getCurrentWeekBounds();
+
+    const lastWeekFirstDay = new Date(currentWeekFirstDay);
+    lastWeekFirstDay.setDate(lastWeekFirstDay.getDate() - 7);
+    const lastWeekLastDay = new Date(currentWeekLastDay);
+    lastWeekLastDay.setDate(lastWeekLastDay.getDate() - 7);
+
+    const lastWeekEvents = state.allEvents.filter((event) => {
+        if (event.unscheduled || !event.date || !event.startTime || !event.endTime) return false;
+        const eventDate = new Date(`${event.date}T00:00`);
+        return eventDate >= lastWeekFirstDay && eventDate <= lastWeekLastDay;
+    });
+
+    if (lastWeekEvents.length === 0) {
+        alert('上週沒有可複製的已排程事件。');
+        return;
+    }
+
+    const currentWeekEvents = state.allEvents.filter((event) => {
+        if (event.unscheduled || !event.date || !event.startTime || !event.endTime) return false;
+        const eventDate = new Date(`${event.date}T00:00`);
+        return eventDate >= currentWeekFirstDay && eventDate <= currentWeekLastDay;
+    });
+
+    if (!window.confirm(`找到上週 ${lastWeekEvents.length} 個已排程事件，將複製到本週對應星期幾與時段（已有事件的時段會略過）。要繼續嗎？`)) {
+        return;
+    }
+
+    const eventsToCreate = [];
+    let skipped = 0;
+
+    lastWeekEvents.forEach((event) => {
+        const oldDate = new Date(`${event.date}T00:00`);
+        const newDate = new Date(oldDate);
+        newDate.setDate(newDate.getDate() + 7);
+        const newDateStr = formatDate(newDate);
+
+        const newStart = timeToMinutes(event.startTime);
+        const newEnd = timeToMinutes(event.endTime);
+        const conflict = currentWeekEvents.some((existing) => {
+            if (existing.date !== newDateStr) return false;
+            const existStart = timeToMinutes(existing.startTime);
+            const existEnd = timeToMinutes(existing.endTime);
+            return newStart < existEnd && existStart < newEnd;
+        });
+
+        if (conflict) {
+            skipped++;
+            return;
+        }
+
+        eventsToCreate.push({
+            title: event.title,
+            workspace: event.workspace || '',
+            chapter: event.chapter || '',
+            pages: event.pages || '',
+            notes: event.notes || '',
+            color: event.color || colorOptions[0],
+            date: newDateStr,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            duration: event.duration || Math.max(SNAP_MINUTES, newEnd - newStart),
+            unscheduled: false,
+            completed: false,
+            uid: state.currentUser.uid,
+            email: state.currentUser.email,
+            createdAt: Date.now(),
+        });
+    });
+
+    if (eventsToCreate.length === 0) {
+        alert(`所有事件的對應時段在本週皆已被佔用，未新增任何事件（略過 ${skipped} 筆）。`);
+        return;
+    }
+
+    copyLastWeekBtn.disabled = true;
+    const originalHtml = copyLastWeekBtn.innerHTML;
+    copyLastWeekBtn.innerHTML = `
+        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>複製中...</span>
+    `;
+
+    try {
+        await Promise.all(eventsToCreate.map((data) => addDoc(collection(db, 'events'), data)));
+        const skipNote = skipped > 0 ? `（略過 ${skipped} 筆衝突時段）` : '';
+        alert(`已複製 ${eventsToCreate.length} 個事件到本週${skipNote}。`);
+    } catch (err) {
+        console.error('Error copying last week events:', err);
+        alert('複製過程中發生錯誤，請稍後再試。');
+    } finally {
+        copyLastWeekBtn.disabled = false;
+        copyLastWeekBtn.innerHTML = originalHtml;
+        lucide.createIcons();
+    }
+}
+
 async function handleExportWeeklyPdf() {
     if (state.selectedWorkspace === ALL_WORKSPACES) {
         alert('請先指定要輸出的工作區。');
@@ -1068,6 +1168,7 @@ function init() {
     todayBtn.addEventListener('click', handleGoToToday);
     workspaceFilterSelect.addEventListener('change', handleWorkspaceFilterChange);
     exportWeeklyPdfBtn.addEventListener('click', handleExportWeeklyPdf);
+    if (copyLastWeekBtn) copyLastWeekBtn.addEventListener('click', handleCopyLastWeek);
     showAddFormBtn.addEventListener('click', handleShowAddForm);
     cancelEditBtn.addEventListener('click', hideForm);
     addEventForm.querySelector('form').addEventListener('submit', handleSaveEvent);
